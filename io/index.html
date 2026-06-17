@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>멀티 (io)</title>
+  <style>
+    :root { --bg:#0d1418; --card:#15242a; --card-hi:#1d343c; --line:#274650; --txt:#e6f3f5; --sub:#8fb4ba; --accent:#36cfd0; }
+    * { box-sizing: border-box; }
+    html, body { margin:0; height:100%; }
+    body {
+      font-family: "Segoe UI", "Malgun Gothic", system-ui, sans-serif;
+      background: radial-gradient(1200px 700px at 50% -10%, #11272d 0%, var(--bg) 60%);
+      color: var(--txt); min-height:100%;
+      display:flex; flex-direction:column; align-items:center; padding: 56px 20px 48px;
+    }
+    .back { align-self:flex-start; color: var(--sub); text-decoration:none; font-size:14px; margin-bottom:20px; }
+    .back:hover { color: var(--accent); }
+    header { text-align:center; margin-bottom: 36px; }
+    h1 { margin:0; font-size: 36px; letter-spacing: 1px; }
+    header p { margin: 10px 0 0; color: var(--sub); font-size: 15px; }
+    .grid { display:grid; gap: 22px; width:100%; max-width: 880px; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+    a.game {
+      display:block; text-decoration:none; color:inherit;
+      background: var(--card); border:1px solid var(--line); border-radius: 16px;
+      padding: 26px 26px 22px; transition: transform .12s ease, background .12s ease, border-color .12s ease;
+    }
+    a.game:hover { transform: translateY(-4px); background: var(--card-hi); border-color: var(--accent); }
+    .game .badge {
+      display:inline-block; font-size: 12px; font-weight:700; letter-spacing:.5px;
+      padding: 4px 10px; border-radius: 999px; margin-bottom: 14px;
+      background: rgba(54,207,208,.14); color: var(--accent); border:1px solid rgba(54,207,208,.35);
+    }
+    .game h2 { margin: 0 0 8px; font-size: 24px; }
+    .game p { margin: 0; color: var(--sub); font-size: 14px; line-height: 1.55; }
+    .game .play { margin-top: 18px; font-size: 14px; font-weight:700; color: var(--accent); display:flex; align-items:center; gap:6px; }
+  </style>
+</head>
+<body>
+  <a class="back" href="../index.html">← 홈</a>
+  <header>
+    <h1>🌐 멀티 (io)</h1>
+    <p>여러 명이 같이 플레이 — 서버에 접속해서</p>
+  </header>
+
+  <main class="grid">
+    <a class="game" href="GoldenGame/index.html">
+      <span class="badge">멀티 io</span>
+      <h2>GoldenGame</h2>
+      <p>다같이 항아리 등반! 망치를 지형에 걸어 위로 위로 — 서로 밟고 매달리며 방해. 이름 입력 후 참가, R로 리셋·캐릭터 변경.</p>
+      <div class="play">▶ 플레이</div>
+    </a>
+  </main>
+</body>
+</html>

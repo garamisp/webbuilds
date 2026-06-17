@@ -5,5 +5,8 @@
 ▶ **플레이:** https://garamisp.github.io/webbuilds/
 
 ## 게임 (활성)
-- GoldenGame
-- ZomDef
+- GoldenGame (싱글)
+- ZomDef (싱글)
+
+## 멀티 (io) — `/io/`
+- GoldenGame (io · Railway 서버)
