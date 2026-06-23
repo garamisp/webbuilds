@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>DesktopBall — 다운로드</title>
+  <style>
+    :root { --bg:#10141c; --card:#1b2330; --line:#2e3a4f; --txt:#e8edf5; --sub:#90a0b8; --accent:#f0c64a; --dl:#5fd38a; }
+    * { box-sizing: border-box; }
+    html, body { margin:0; min-height:100%; }
+    body {
+      font-family: "Segoe UI", "Malgun Gothic", system-ui, sans-serif;
+      background: radial-gradient(1200px 700px at 50% -10%, #1a2434 0%, var(--bg) 60%);
+      color: var(--txt); min-height:100vh;
+      display:flex; flex-direction:column; align-items:center; padding: 56px 20px 48px;
+    }
+    .wrap { width:100%; max-width: 620px; }
+    a.back { color: var(--sub); text-decoration:none; font-size:14px; }
+    a.back:hover { color: var(--txt); }
+    .card {
+      margin-top: 18px; background: var(--card); border:1px solid var(--line);
+      border-radius: 18px; padding: 30px 30px 26px;
+    }
+    .badge {
+      display:inline-block; font-size: 12px; font-weight:700; letter-spacing:.5px;
+      padding: 4px 10px; border-radius: 999px; margin-bottom: 14px;
+      background: rgba(95,211,138,.16); color: var(--dl); border:1px solid rgba(95,211,138,.4);
+    }
+    h1 { margin: 0 0 10px; font-size: 30px; }
+    .desc { color: var(--sub); font-size: 15px; line-height: 1.6; margin: 0 0 22px; }
+    a.dl {
+      display:inline-flex; align-items:center; gap:9px; text-decoration:none;
+      background: var(--dl); color:#08210f; font-weight:800; font-size: 16px;
+      padding: 13px 22px; border-radius: 12px; transition: filter .12s ease;
+    }
+    a.dl:hover { filter: brightness(1.08); }
+    .meta { color:#56627a; font-size: 13px; margin-top: 12px; }
+    h2 { font-size: 16px; margin: 28px 0 10px; color:#cdd6e4; }
+    ul { margin: 0; padding-left: 20px; color: var(--sub); font-size: 14px; line-height: 1.7; }
+    code { background:#0e1420; border:1px solid var(--line); border-radius:6px; padding:1px 6px; color:#dfe7f2; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <a class="back" href="../index.html">← 게임 모음으로</a>
+    <div class="card">
+      <span class="badge">⬇ 다운로드 · Windows 전용</span>
+      <h1>DesktopBall</h1>
+      <p class="desc">
+        바탕화면 위에 뜬 투명 오버레이에서 공이 화면의 창들을 피해 등속으로 튕겨다니는 토이입니다.
+        브라우저에서는 실행되지 않는 <b>Windows 실행 파일</b>이라 내려받아 실행해야 합니다.
+      </p>
+
+      <a class="dl" href="DesktopBall.zip" download>⬇ DesktopBall.zip 다운로드 (약 20MB)</a>
+      <div class="meta">.NET 설치 불필요 · Windows 10 / 11</div>
+
+      <h2>실행 방법</h2>
+      <ul>
+        <li>zip을 풀고 <code>DesktopBall.exe</code> 와 <code>win-scan.exe</code> 를 같은 폴더에 둡니다.</li>
+        <li><code>DesktopBall.exe</code> 실행.</li>
+        <li>SmartScreen 경고가 뜨면 <b>추가 정보 → 실행</b> (서명 안 된 개인 빌드).</li>
+      </ul>
+
+      <h2>조작</h2>
+      <ul>
+        <li>시스템 트레이(우측 하단)의 파란 원 <b>우클릭</b>: 공 개수 / 크기 / 그림 / 종료.</li>
+        <li>종료 단축키: <code>Ctrl + Alt + Q</code></li>
+        <li>왼쪽 버튼을 누른 채 공에 가까이 가면 공이 밀려납니다. 클릭은 공을 통과합니다.</li>
+      </ul>
+    </div>
+  </div>
+</body>
+</html>
