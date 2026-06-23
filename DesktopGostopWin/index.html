@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>맞고 (Desktop Gostop) — 다운로드</title>
+  <style>
+    :root { --bg:#10141c; --card:#1b2330; --line:#2e3a4f; --txt:#e8edf5; --sub:#90a0b8; --accent:#f0c64a; --dl:#5fd38a; }
+    * { box-sizing: border-box; }
+    html, body { margin:0; min-height:100%; }
+    body {
+      font-family: "Segoe UI", "Malgun Gothic", system-ui, sans-serif;
+      background: radial-gradient(1200px 700px at 50% -10%, #1a2434 0%, var(--bg) 60%);
+      color: var(--txt); min-height:100vh;
+      display:flex; flex-direction:column; align-items:center; padding: 56px 20px 48px;
+    }
+    .wrap { width:100%; max-width: 620px; }
+    a.back { color: var(--sub); text-decoration:none; font-size:14px; }
+    a.back:hover { color: var(--txt); }
+    .card {
+      margin-top: 18px; background: var(--card); border:1px solid var(--line);
+      border-radius: 18px; padding: 30px 30px 26px;
+    }
+    .badge {
+      display:inline-block; font-size: 12px; font-weight:700; letter-spacing:.5px;
+      padding: 4px 10px; border-radius: 999px; margin-bottom: 14px;
+      background: rgba(95,211,138,.16); color: var(--dl); border:1px solid rgba(95,211,138,.4);
+    }
+    h1 { margin: 0 0 10px; font-size: 30px; }
+    .desc { color: var(--sub); font-size: 15px; line-height: 1.6; margin: 0 0 22px; }
+    a.dl {
+      display:inline-flex; align-items:center; gap:9px; text-decoration:none;
+      background: var(--dl); color:#08210f; font-weight:800; font-size: 16px;
+      padding: 13px 22px; border-radius: 12px; transition: filter .12s ease;
+    }
+    a.dl:hover { filter: brightness(1.08); }
+    a.play { display:inline-block; margin-left: 12px; color: var(--accent); text-decoration:none; font-size:14px; font-weight:700; }
+    a.play:hover { text-decoration:underline; }
+    .meta { color:#56627a; font-size: 13px; margin-top: 12px; }
+    h2 { font-size: 16px; margin: 28px 0 10px; color:#cdd6e4; }
+    ul { margin: 0; padding-left: 20px; color: var(--sub); font-size: 14px; line-height: 1.7; }
+    code { background:#0e1420; border:1px solid var(--line); border-radius:6px; padding:1px 6px; color:#dfe7f2; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <a class="back" href="../index.html">← 게임 모음으로</a>
+    <div class="card">
+      <span class="badge">⬇ 다운로드 · Windows 전용</span>
+      <h1>맞고 (Desktop Gostop)</h1>
+      <p class="desc">
+        근무 중(?) 바탕화면 구석에서 몰래 즐기는 1:1~4인 화투 고스톱입니다. 브라우저에서도 플레이할 수 있지만,
+        <b>투명도 조절·작업표시줄 숨김·전역 보스키</b> 같은 스텔스 기능은 <b>Windows 실행 파일</b>에서만 동작합니다.
+      </p>
+
+      <a class="dl" href="DesktopGostop.zip" download>⬇ DesktopGostop.zip 다운로드 (약 14MB)</a>
+      <a class="play" href="../DesktopGostop/index.html">▶ 브라우저로 바로 플레이</a>
+      <div class="meta">설치 불필요 · 단일 exe · Windows 10 / 11</div>
+
+      <h2>실행 방법</h2>
+      <ul>
+        <li>zip을 풀고 <code>DesktopGostop.exe</code> 실행 (Godot 설치 불필요).</li>
+        <li>SmartScreen 경고가 뜨면 <b>추가 정보 → 실행</b> (서명 안 된 개인 빌드).</li>
+        <li>실행하면 화면 <b>우측 하단</b>에 작은 위젯으로 뜹니다.</li>
+      </ul>
+
+      <h2>스텔스 기능 (습격 대비)</h2>
+      <ul>
+        <li><b>투명도</b>: 타이틀바 슬라이더로 창 전체를 실시간 반투명하게.</li>
+        <li><b>작업표시줄 숨김</b>: <code>숨</code> 버튼 — 작업표시줄/Alt-Tab에서 사라짐.</li>
+        <li><b>보스키(전역)</b>: <code>설</code>에서 켜고 단축키 지정(기본 <code>F9</code>). 어디서든 그 키로 창 즉시 숨김/복원.</li>
+        <li><code>위</code> 항상 위 · 타이틀바 드래그로 이동.</li>
+      </ul>
+
+      <h2>게임</h2>
+      <ul>
+        <li>인원 2~4인 선택, 빈 자리는 AI. 같은 월끼리 짝 맞춰 먹기(따닥!), 7점 나면 고/스톱.</li>
+        <li>화면 크기에 맞춰 카드가 비례 확대됩니다.</li>
+      </ul>
+    </div>
+  </div>
+</body>
+</html>
