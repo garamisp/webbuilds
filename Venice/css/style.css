@@ -46,6 +46,11 @@ body{
 .skill.ready .bar i{ background:#c08bff; }
 .skill.ready:hover{ background:rgba(124,92,255,.28); }
 
+.icon-btn{ background:var(--panel2); border:1px solid var(--line); color:var(--txt);
+  border-radius:10px; padding:6px 9px; font-size:16px; cursor:pointer; line-height:1;
+  -webkit-tap-highlight-color:transparent; }
+.icon-btn:hover{ border-color:var(--accent); }
+
 .hearts{ display:flex; gap:4px; margin-left:auto; }
 .hearts .h{ width:14px; height:14px; border-radius:4px; background:#3aa0ff;
   box-shadow:0 0 6px rgba(74,163,255,.6); transition:opacity .2s, transform .2s; }

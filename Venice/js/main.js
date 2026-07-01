@@ -69,7 +69,9 @@
   });
   game.on('clear', function (word) {
     if (net.connected) net.sendAttack(word);
+    VeniceAudio.attack();
   });
+  game.on('damage', function () { VeniceAudio.damage(); });
   game.on('dead', function () {
     if (net.connected) net.sendDead();  // 상대들에게 통지 (그들은 계속 + 라이프 보너스)
     sysMsg('당신의 도시가 수몰되었습니다.');
@@ -81,9 +83,10 @@
     recordLocal(settings.name, sc);          // 이 기기 기록
     if (net.connected) net.sendScore(sc);     // 전역 랭킹 등록
     renderLB();
+    VeniceAudio.over();
   });
   game.on('skill', updateSkillUI);
-  game.on('heal', function () { toast('🎯 10개 파괴! 라이프 +1 ❤'); });
+  game.on('heal', function () { toast('🎯 10개 파괴! 라이프 +1 ❤'); VeniceAudio.heal(); });
 
   // ---------- 스페셜 스킬: 단어 발사 ----------
   function updateSkillUI(st) {
@@ -115,6 +118,7 @@
     var word = game.useSkill(raw); // 자신에게 떨어뜨리고 정제된 단어 반환
     if (!word) { skillHint.textContent = '충전이 부족합니다.'; return; }
     if (net.connected) net.sendAttack(word); // 다른 모두에게 발사
+    VeniceAudio.skill();
     sysMsg('⚡ "' + word + '" 발사! (모두에게 + 나에게도)');
     closeSkill();
   }
@@ -150,14 +154,16 @@
   function fireWord() {
     var v = typeInput.value;
     var had = v.trim().length > 0;
-    game.tryMatch(v);            // 일치하면 발사(파괴)
+    var hit = game.tryMatch(v);  // 일치하면 발사(파괴)
     typeInput.value = '';        // 무조건 비움 → 오타는 발사로 즉시 정리 후 재입력
     game.setTyped('');
     if (had) firePulse();        // 발사 연출
+    if (hit) VeniceAudio.hit();  // 명중 효과음
   }
   typeInput.addEventListener('keydown', function (e) {
     if (e.key === 'Enter') { e.preventDefault(); fireWord(); }
     else if (e.key === 'Escape') { typeInput.value = ''; game.setTyped(''); }
+    else if (e.key !== 'Tab' && !e.ctrlKey && !e.metaKey && !e.altKey) { VeniceAudio.key(); }
   });
   // 모바일: 키패드에 엔터가 없으니 발사 버튼으로. 포커스 뺏기지 않게 pointerdown 막음(키보드 유지).
   fireBtn.addEventListener('pointerdown', function (e) { e.preventDefault(); });
@@ -179,8 +185,17 @@
           document.activeElement !== skillInput) focusType();
     }, 30);
   });
-  canvas.addEventListener('pointerdown', focusType);
+  canvas.addEventListener('pointerdown', function () { VeniceAudio.resume(); focusType(); });
   window.addEventListener('focus', focusType);
+
+  // 음소거 토글
+  var muteBtn = $('muteBtn');
+  muteBtn.textContent = VeniceAudio.isMuted() ? '🔇' : '🔊';
+  muteBtn.addEventListener('click', function () {
+    VeniceAudio.resume();
+    muteBtn.textContent = VeniceAudio.toggle() ? '🔇' : '🔊';
+    focusType();
+  });
 
   // ---------- 네트워크 ----------
   function setNet(on, label) {
@@ -238,6 +253,7 @@
     var healed = game.addLife(1);
     toast('☠ ' + nm + ' 게임오버!' + (healed ? '  라이프 +1 ❤' : ''));
     sysMsg(nm + ' 님이 수몰되었습니다. ' + (healed ? '(생존 보너스 라이프 +1)' : ''));
+    if (healed) VeniceAudio.heal();
   });
   // 상대 자리비움 / 복귀
   net.on('peeraway', function (m) {
@@ -437,6 +453,7 @@
   })();
 
   function startGame() {
+    VeniceAudio.resume();
     closeSkill();
     startOverlay.classList.add('hidden');
     overOverlay.classList.add('hidden');

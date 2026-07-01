@@ -247,6 +247,7 @@
     this._shake = 8;
     this.life = Math.max(0, this.life - 1);
     this.emit('life', this.life);
+    this.emit('damage');
     if (this.life <= 0) this._die();
   };
 
