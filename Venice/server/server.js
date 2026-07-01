@@ -11,8 +11,25 @@ const ROOM_CAP = parseInt(process.env.ROOM_CAP || '6', 10); // 방 최대 인원
 const AFK_MS = parseInt(process.env.AFK_MS || '20000', 10); // 자리비움 후 제외까지 유예(ms)
 const MAX_MSG = 16 * 1024;
 
-// --- 간단 HTTP (헬스체크/안내) ---
+const ADMIN_KEY = process.env.ADMIN_KEY || ''; // 설정 시 /reset?key=... 로 랭킹 초기화 가능
+
+// --- 간단 HTTP (헬스체크 / 랭킹 초기화) ---
 const server = http.createServer((req, res) => {
+  let u;
+  try { u = new URL(req.url, 'http://x'); } catch (e) { u = { pathname: '/', searchParams: new Map() }; }
+  if (u.pathname === '/reset') {
+    if (ADMIN_KEY && u.searchParams.get('key') === ADMIN_KEY) {
+      leaderboard = [];
+      saveScores();
+      broadcastAll({ t: 'lb', top: [] });
+      res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+      res.end('leaderboard reset OK\n');
+    } else {
+      res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
+      res.end('forbidden (ADMIN_KEY 미설정 또는 key 불일치)\n');
+    }
+    return;
+  }
   res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
   res.end('Typing Arena relay server — OK\nrooms: ' + rooms.size + ', clients: ' + clients.size + '\n');
 });
@@ -196,5 +213,5 @@ setInterval(() => {
 }, 5000);
 
 server.listen(PORT, () => {
-  console.log('Venice relay listening on :' + PORT + ' (room cap ' + ROOM_CAP + ')');
+  console.log('Typing Arena relay listening on :' + PORT + ' (room cap ' + ROOM_CAP + ')');
 });

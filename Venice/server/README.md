@@ -54,6 +54,16 @@ var RAILWAY_URL = 'wss://venice-production.up.railway.app';
 테스트용으로는 URL 쿼리로도 덮어쓸 수 있다:
 `https://garamisp.github.io/webbuilds/Venice/?server=wss://...`
 
+## 하이스코어
+- 게임오버 시 클라이언트가 점수를 보내면 서버가 전역 랭킹(아이디별 최고점, TOP 3 표시)을 갱신·브로드캐스트.
+- `scores.json` 에 저장. **재배포 시 초기화됨**(파일시스템이 배포마다 리셋). 영구 보존하려면
+  Railway 에 **Volume** 을 붙이고 환경변수 `DATA_DIR` 을 볼륨 마운트 경로로 지정.
+- **랭킹 초기화**: 환경변수 `ADMIN_KEY` 를 설정한 뒤
+  `https://<도메인>/reset?key=<ADMIN_KEY>` 접속 → 랭킹 리셋(모두에게 즉시 반영). 키 없으면 비활성(403).
+
 ## 환경변수
 - `PORT` — Railway 자동 주입.
 - `ROOM_CAP` — 방 최대 인원 (기본 6).
+- `AFK_MS` — 자리비움 후 매치 제외까지 유예(ms, 기본 20000).
+- `DATA_DIR` — `scores.json` 저장 경로(볼륨 마운트 시 지정, 기본 현재 폴더).
+- `ADMIN_KEY` — 설정 시 `/reset?key=...` 로 랭킹 초기화 허용.
