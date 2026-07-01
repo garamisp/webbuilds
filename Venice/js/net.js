@@ -3,9 +3,9 @@
 (function (global) {
   'use strict';
 
-  // ▼▼▼ 배포 후 여기에 Railway 의 wss URL 을 넣으세요 (예: 'wss://venice-xxxx.up.railway.app')
-  var RAILWAY_URL = '';
-  // ▲▲▲  비워두면: localhost 는 ws://localhost:8787, 그 외엔 솔로 전용.
+  // ▼▼▼ Railway 중개 서버 (wss). 도메인이 바뀌면 여기만 고치면 됨.
+  var RAILWAY_URL = 'wss://webbuilds-production.up.railway.app';
+  // ▲▲▲  우선순위: ?server= > localStorage > localhost(로컬 릴레이) > RAILWAY_URL
 
   function resolveUrl() {
     try {
@@ -16,9 +16,10 @@
       var ls = global.localStorage.getItem('venice_server');
       if (ls) return ls;
     } catch (e) {}
-    if (RAILWAY_URL) return RAILWAY_URL;
+    // 로컬 개발은 로컬 릴레이 우선 (프로덕션 서버 오염 방지)
     var h = global.location.hostname;
     if (h === 'localhost' || h === '127.0.0.1' || h === '') return 'ws://localhost:8787';
+    if (RAILWAY_URL) return RAILWAY_URL;
     return ''; // 미설정 → 솔로 전용
   }
 
