@@ -19,6 +19,8 @@
   var netLabel = $('netLabel');
   var startOverlay = $('startOverlay');
   var overOverlay = $('overOverlay');
+  var lbPanel = $('lbPanel');
+  var lbStart = $('lbStart');
   var skillBtn = $('skillBtn');
   var skillCount = $('skillCount');
   var skillBar = $('skillBar');
@@ -38,6 +40,8 @@
   var opponents = {}; // id -> {card, canvas, ctx, snap, name, dead}
   var resultShown = false;
   var skillOpen = false;
+  var localLB = loadLocalLB();  // 이 기기 기록 (오프라인 폴백)
+  var globalLB = [];            // 서버 전역 랭킹
 
   // ---------- 라이프(하트) ----------
   function buildHearts() {
@@ -73,6 +77,10 @@
   game.on('gameover', function (info) {
     var battle = info && info.mode === 'battle';
     showResult('수몰… 게임 오버', battle ? '다시 도전하세요! 상대는 계속 싸우고 있습니다.' : '도시가 수몰되었습니다.', info);
+    var sc = (info && info.score) || game.score;
+    recordLocal(settings.name, sc);          // 이 기기 기록
+    if (net.connected) net.sendScore(sc);     // 전역 랭킹 등록
+    renderLB();
   });
   game.on('skill', updateSkillUI);
   game.on('heal', function () { toast('🎯 10개 파괴! 라이프 +1 ❤'); });
@@ -368,6 +376,38 @@
     }
   });
 
+  // ---------- 하이스코어 (👑 TOP 3) ----------
+  function loadLocalLB() { try { return JSON.parse(localStorage.getItem('venice_lb') || '[]') || []; } catch (e) { return []; } }
+  function saveLocalLB() { try { localStorage.setItem('venice_lb', JSON.stringify(localLB.slice(0, 10))); } catch (e) {} }
+  function recordLocal(name, score) {
+    name = String(name || '익명').slice(0, 16); score = parseInt(score, 10) || 0;
+    if (score <= 0) return;
+    var ex = null;
+    for (var i = 0; i < localLB.length; i++) { if (localLB[i].name === name) { ex = localLB[i]; break; } }
+    if (ex) { if (score > ex.score) ex.score = score; else return; } // 같은 아이디면 최고점만
+    else localLB.push({ name: name, score: score });
+    localLB.sort(function (a, b) { return b.score - a.score; });
+    if (localLB.length > 10) localLB.length = 10;
+    saveLocalLB();
+  }
+  function currentLB() { return (net.connected && globalLB.length) ? globalLB : localLB; }
+  function lbRows(list) {
+    var out = '', n = Math.min(3, list.length);
+    for (var i = 0; i < n; i++) {
+      out += '<div class="lb-row"><span class="rk">' + (i + 1) + '</span><span class="nm">' +
+        esc(list[i].name) + '</span><span class="sc">' + list[i].score + '</span></div>';
+    }
+    return out;
+  }
+  function renderLB() {
+    var list = currentLB();
+    if (list.length) { lbPanel.classList.remove('empty'); lbPanel.innerHTML = '<div class="lb-title">👑 TOP 3</div>' + lbRows(list); }
+    else lbPanel.classList.add('empty');
+    lbStart.innerHTML = '<div class="lb-title">👑 하이스코어 TOP 3</div>' +
+      (list.length ? lbRows(list) : '<div class="lb-empty">아직 기록이 없어요. 첫 주인공이 되어보세요!</div>');
+  }
+  net.on('leaderboard', function (top) { globalLB = top || []; renderLB(); });
+
   // ---------- 시작 화면 ----------
   (function initStartUI() {
     var nick = $('nickInput');
@@ -444,6 +484,7 @@
   buildHearts();
   renderHearts(VeniceGame.MAX_LIFE);
   emptyHint();
+  renderLB();
 
   // 디버그/콘솔 접근용 핸들
   window.Venice = { game: game, net: net, settings: settings };

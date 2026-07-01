@@ -3,6 +3,7 @@
 'use strict';
 
 const http = require('http');
+const fs = require('fs');
 const { WebSocketServer } = require('ws');
 
 const PORT = process.env.PORT || 8787;
@@ -36,6 +37,28 @@ function broadcast(roomId, obj, exceptId) {
     send(clients.get(mid), obj);
   }
 }
+function broadcastAll(obj) {
+  for (const c of clients.values()) send(c, obj);
+}
+
+// ----- 전역 하이스코어 (아이디별 최고점, 상위 몇 개 유지 / 표시는 TOP 3) -----
+const SCORE_FILE = (process.env.DATA_DIR || '.') + '/scores.json';
+let leaderboard = [];
+try { leaderboard = JSON.parse(fs.readFileSync(SCORE_FILE, 'utf8')) || []; } catch (e) { leaderboard = []; }
+function saveScores() { try { fs.writeFileSync(SCORE_FILE, JSON.stringify(leaderboard)); } catch (e) {} }
+function topScores() { return leaderboard.slice(0, 3); }
+function recordScore(name, score) {
+  name = String(name || '익명').slice(0, 16);
+  score = Math.max(0, Math.min(9999999, parseInt(score, 10) || 0));
+  if (score <= 0) return;
+  const ex = leaderboard.find(function (e) { return e.name === name; }); // 같은 아이디면 최고점만
+  if (ex) { if (score > ex.score) ex.score = score; else return; }
+  else leaderboard.push({ name: name, score: score });
+  leaderboard.sort(function (a, b) { return b.score - a.score; });
+  if (leaderboard.length > 50) leaderboard.length = 50;
+  saveScores();
+  broadcastAll({ t: 'lb', top: topScores() });
+}
 function roomPeers(roomId, exceptId) {
   const room = rooms.get(roomId);
   const list = [];
@@ -67,7 +90,7 @@ function assignRoom(priv) {
 function joinRoom(client) {
   client.room = assignRoom(client.priv);
   rooms.get(client.room).members.add(client.id);
-  send(client, { t: 'welcome', id: client.id, room: client.room, peers: roomPeers(client.room, client.id) });
+  send(client, { t: 'welcome', id: client.id, room: client.room, peers: roomPeers(client.room, client.id), lb: topScores() });
   broadcast(client.room, { t: 'join', id: client.id, name: client.name }, client.id);
 }
 
@@ -113,6 +136,10 @@ wss.on('connection', (ws) => {
         break;
       case 'ready':
         client.dead = false;
+        break;
+      case 'score':
+        // 게임오버 시 점수 등록 → 전역 랭킹 갱신·브로드캐스트
+        recordScore(client.name, m.score);
         break;
       case 'attack':
         if (client.room && typeof m.word === 'string' && m.word.length <= 64) {

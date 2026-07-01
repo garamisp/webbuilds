@@ -113,6 +113,7 @@
           this.peers[m.peers[i].id] = m.peers[i];
         }
         this.emit('welcome', m);
+        if (m.lb) this.emit('leaderboard', m.lb);
         this.emit('peerschange', this.peerCount());
         break;
       case 'join':
@@ -140,6 +141,9 @@
       case 'back':
         this.emit('peerback', m);  // {id} — 상대 복귀
         break;
+      case 'lb':
+        this.emit('leaderboard', m.top);  // 전역 하이스코어 TOP 3
+        break;
       case 'chat':
         this.emit('chat', m);      // {from, name, text}
         break;
@@ -155,6 +159,7 @@
   VeniceNet.prototype.sendReady = function () { this._send({ t: 'ready' }); };
   VeniceNet.prototype.sendAfk = function () { this._send({ t: 'afk' }); };
   VeniceNet.prototype.sendBack = function () { this._send({ t: 'back' }); };
+  VeniceNet.prototype.sendScore = function (score) { this._send({ t: 'score', score: score }); };
   VeniceNet.prototype.sendAttack = function (word) { this._send({ t: 'attack', word: word }); };
   VeniceNet.prototype.sendSnap = function (s) { this._send({ t: 'snap', s: s }); };
   VeniceNet.prototype.sendDead = function () { this._send({ t: 'dead' }); };
