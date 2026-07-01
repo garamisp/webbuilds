@@ -45,6 +45,7 @@
     this._spawnTimer = 0;
     this._levelTimer = 0;
     this._clearsThisLevel = 0;
+    this._clearsForHeal = 0;    // 10개 파괴마다 라이프 +1
     this._last = 0;
     this._damageFlash = 0;
     this._healFlash = 0;
@@ -75,14 +76,20 @@
   };
 
   // ----- 파라미터 (난이도 스케일) -----
+  // 속도는 상한선을 둔다(레벨 ~22 에서 최대). 난이도는 영어 섞임·대결 공격으로 보강.
   VeniceGame.prototype.fallSpeed = function () {
-    return Math.min(this.H * 0.62, this.H * (0.10 + 0.022 * (this.level - 1)));
+    return Math.min(this.H * 0.30, this.H * (0.09 + 0.010 * (this.level - 1)));
   };
   VeniceGame.prototype.spawnInterval = function () {
-    return Math.max(0.55, 2.4 - 0.12 * (this.level - 1));
+    return Math.max(0.75, 2.4 - 0.09 * (this.level - 1));
   };
   VeniceGame.prototype.wordsPerLevel = function () {
-    return this.mode === 'battle' ? 8 : 6;
+    return this.mode === 'battle' ? 10 : 8;
+  };
+  // 한국어 모드에서 특정 레벨부터 영어 단어가 섞여 나올 확률
+  VeniceGame.prototype.englishChance = function () {
+    if (this.lang !== 'ko' || this.level < 10) return 0;
+    return Math.min(0.4, (this.level - 9) * 0.05);
   };
   VeniceGame.prototype.fontPx = function () {
     return clamp(Math.round(this.H * 0.040), 18, 30);
@@ -109,6 +116,7 @@
     this._spawnTimer = 0.4;
     this._levelTimer = 0;
     this._clearsThisLevel = 0;
+    this._clearsForHeal = 0;
     this._damageFlash = 0;
     this._healFlash = 0;
     this._shake = 0;
@@ -198,6 +206,12 @@
       if (this._clearsThisLevel >= this.wordsPerLevel()) {
         this._clearsThisLevel = 0;
         this._levelUp();
+      }
+      // 10개 파괴마다 라이프 +1 (솔로/대결 공통)
+      this._clearsForHeal++;
+      if (this._clearsForHeal >= 10) {
+        this._clearsForHeal = 0;
+        if (this.addLife(1)) this.emit('heal', { by: 'clears', n: 10 });
       }
     }
   };
@@ -292,7 +306,10 @@
 
   // ----- 스폰 -----
   VeniceGame.prototype._spawnWord = function (text, incoming, launched) {
-    if (text == null) text = VeniceWords.pick(this.lang, this.level, this._busy);
+    if (text == null) {
+      var pickLang = (Math.random() < this.englishChance()) ? 'en' : this.lang;
+      text = VeniceWords.pick(pickLang, this.level, this._busy);
+    }
     this.ctx.font = '700 ' + this.fontPx() + 'px ' + FONT;
     var halfW = this.ctx.measureText(text).width / 2 + 14;
     var x = clamp(Math.random() * this.W, halfW + 6, this.W - halfW - 6);
@@ -350,10 +367,10 @@
       } else {
         this._skillTimer = 0;
       }
-      // 솔로: 시간으로도 레벨 상승
+      // 솔로: 시간으로도 레벨 상승 (완만하게)
       if (this.mode === 'solo') {
         this._levelTimer += dt;
-        if (this._levelTimer >= 11) { this._levelTimer = 0; this._levelUp(); }
+        if (this._levelTimer >= 14) { this._levelTimer = 0; this._levelUp(); }
       }
       this._spawnTimer -= dt;
       if (this._spawnTimer <= 0) {

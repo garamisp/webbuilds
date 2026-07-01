@@ -7,6 +7,7 @@
   var canvas = $('game');
   var typeInput = $('typeInput');
   var typeRow = $('typeRow');
+  var fireBtn = $('fireBtn');
   var chatInput = $('chatInput');
   var modeBadge = $('modeBadge');
   var levelVal = $('levelVal');
@@ -74,6 +75,7 @@
     showResult('수몰… 게임 오버', battle ? '다시 도전하세요! 상대는 계속 싸우고 있습니다.' : '도시가 수몰되었습니다.', info);
   });
   game.on('skill', updateSkillUI);
+  game.on('heal', function () { toast('🎯 10개 파괴! 라이프 +1 ❤'); });
 
   // ---------- 스페셜 스킬: 단어 발사 ----------
   function updateSkillUI(st) {
@@ -132,24 +134,26 @@
   });
 
   // ---------- 입력 (한글 IME) ----------
-  // 입력 중에는 강조만 (자동 파괴 없음). 파괴는 Enter 로만 발사.
+  // 입력 중에는 강조만 (자동 파괴 없음). 파괴는 발사(Enter 또는 발사 버튼)로만.
   function onType() { game.setTyped(typeInput.value); }
   typeInput.addEventListener('input', onType);
   typeInput.addEventListener('compositionend', onType);
+
+  function fireWord() {
+    var v = typeInput.value;
+    var had = v.trim().length > 0;
+    game.tryMatch(v);            // 일치하면 발사(파괴)
+    typeInput.value = '';        // 무조건 비움 → 오타는 발사로 즉시 정리 후 재입력
+    game.setTyped('');
+    if (had) firePulse();        // 발사 연출
+  }
   typeInput.addEventListener('keydown', function (e) {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      var v = typeInput.value;
-      var had = v.trim().length > 0;
-      game.tryMatch(v);          // Enter 눌러야 발사(파괴)
-      typeInput.value = '';      // 무조건 비움 → 오타는 Enter 로 즉시 정리 후 재입력
-      game.setTyped('');
-      if (had) firePulse();      // 발사 연출
-    } else if (e.key === 'Escape') {
-      typeInput.value = '';
-      game.setTyped('');
-    }
+    if (e.key === 'Enter') { e.preventDefault(); fireWord(); }
+    else if (e.key === 'Escape') { typeInput.value = ''; game.setTyped(''); }
   });
+  // 모바일: 키패드에 엔터가 없으니 발사 버튼으로. 포커스 뺏기지 않게 pointerdown 막음(키보드 유지).
+  fireBtn.addEventListener('pointerdown', function (e) { e.preventDefault(); });
+  fireBtn.addEventListener('click', function () { fireWord(); focusType(); });
   function firePulse() {
     typeRow.classList.remove('fire');
     void typeRow.offsetWidth;    // 리플로우로 애니메이션 재시작
@@ -409,10 +413,10 @@
 
   // ---------- 리사이즈 ----------
   var rt;
-  window.addEventListener('resize', function () {
-    clearTimeout(rt);
-    rt = setTimeout(function () { game.resize(); }, 120);
-  });
+  function scheduleResize() { clearTimeout(rt); rt = setTimeout(function () { game.resize(); }, 120); }
+  window.addEventListener('resize', scheduleResize);
+  window.addEventListener('orientationchange', scheduleResize);
+  if (window.visualViewport) window.visualViewport.addEventListener('resize', scheduleResize);
 
   // 초기화
   buildHearts();

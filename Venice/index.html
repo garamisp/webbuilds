@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, interactive-widget=resizes-content" />
   <meta name="theme-color" content="#0e1530" />
   <title>타자 아레나</title>
   <link rel="stylesheet" href="css/style.css" />
@@ -28,7 +28,9 @@
         <div id="typeRow">
           <span id="typePrompt">▶</span>
           <input id="typeInput" type="text" autocomplete="off" autocorrect="off"
-                 autocapitalize="off" spellcheck="false" placeholder="떨어지는 단어를 입력!" />
+                 autocapitalize="off" spellcheck="false" enterkeyhint="send"
+                 placeholder="단어 입력 후 발사!" />
+          <button id="fireBtn" type="button" tabindex="-1">발사</button>
         </div>
       </div>
     </section>
