@@ -159,6 +159,22 @@
     this.emit('mode', 'solo');
   };
 
+  // 레벨만 최소로 (라이프/점수/화면 단어/스킬충전 전부 유지) — io식 난입 대응
+  VeniceGame.prototype.resetLevel = function () {
+    this.level = 1;
+    this._levelTimer = 0;
+    this._clearsThisLevel = 0;
+    this.emit('level', this.level);
+  };
+
+  // 라이브 난입: 솔로→대결 전환하되 진행상황(라이프/점수/단어)은 유지, 레벨만 초기화
+  VeniceGame.prototype.enterBattle = function () {
+    this.mode = 'battle';
+    this.resetLevel();
+    this.emit('mode', 'battle');
+    if (!this.gameOver) this.start(); // 대개 이미 running (guarded)
+  };
+
   VeniceGame.prototype.start = function () {
     if (this.running) return;
     this.running = true;

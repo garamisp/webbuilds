@@ -213,6 +213,11 @@
   net.on('join', function (m) {
     sysMsg(m.name + ' 님이 입장했습니다.');
     addOpponent(m.id, m.name);
+    // 이미 대결 중인데 새 도전자 난입 → 레벨만 초기화(라이프·점수·진행 유지)
+    if (game.mode === 'battle' && canPlay()) {
+      game.resetLevel();
+      toast('🚪 ' + (m.name || '새 도전자') + ' 난입 — 레벨 초기화!');
+    }
   });
   net.on('leave', function (m) {
     var o = opponents[m.id];
@@ -223,8 +228,8 @@
     updateNetLabel(count);
     // 솔로 ↔ 대결 전환
     if (count > 0 && game.mode === 'solo' && canPlay()) {
-      sysMsg('대결 시작! 레벨이 초기화됩니다.');
-      game.startBattle();
+      sysMsg('대결 시작! (레벨만 초기화 · 라이프·점수 유지)');
+      game.enterBattle();
       net.sendReady();
     } else if (count === 0 && game.mode === 'battle') {
       if (resultShown) { /* 결과 화면 중 — '다시 시작' 버튼이 처리 */ }
