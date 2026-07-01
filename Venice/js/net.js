@@ -134,6 +134,12 @@
       case 'dead':
         this.emit('peerdead', m);  // {id, name} — 상대가 게임오버됨
         break;
+      case 'away':
+        this.emit('peeraway', m);  // {id} — 상대 자리비움
+        break;
+      case 'back':
+        this.emit('peerback', m);  // {id} — 상대 복귀
+        break;
       case 'chat':
         this.emit('chat', m);      // {from, name, text}
         break;
@@ -147,6 +153,8 @@
   };
 
   VeniceNet.prototype.sendReady = function () { this._send({ t: 'ready' }); };
+  VeniceNet.prototype.sendAfk = function () { this._send({ t: 'afk' }); };
+  VeniceNet.prototype.sendBack = function () { this._send({ t: 'back' }); };
   VeniceNet.prototype.sendAttack = function (word) { this._send({ t: 'attack', word: word }); };
   VeniceNet.prototype.sendSnap = function (s) { this._send({ t: 'snap', s: s }); };
   VeniceNet.prototype.sendDead = function () { this._send({ t: 'dead' }); };

@@ -33,6 +33,7 @@
 
     this.mode = 'solo';          // 'solo' | 'battle'
     this.running = false;
+    this.paused = false;         // 탭 숨김 시 일시정지
     this.gameOver = false;
     this.dead = false;           // 대결에서 수몰됨(관전)
 
@@ -123,6 +124,7 @@
     this._pendingOver = null;
     this.skillCharges = 0;
     this._skillTimer = 0;
+    this.paused = false;
     this.gameOver = false;
     this.dead = false;
   };
@@ -166,6 +168,18 @@
   VeniceGame.prototype.stop = function () {
     this.running = false;
     if (this._raf) global.cancelAnimationFrame(this._raf);
+  };
+
+  // 탭 숨김 → 일시정지 (그동안 오는 공격은 무시하여 복귀 시 폭탄 방지)
+  VeniceGame.prototype.pause = function () { this.paused = true; };
+  VeniceGame.prototype.resume = function () {
+    if (!this.paused) return;
+    this.paused = false;
+    this._last = 0; // dt 급증(빨리감기) 방지
+    if (this.running) {
+      if (this._raf) global.cancelAnimationFrame(this._raf);
+      this._raf = global.requestAnimationFrame(this._loop);
+    }
   };
 
   // ----- 입력 매칭 -----
@@ -278,7 +292,7 @@
 
   // 공격 수신 → 단어 떨어뜨림
   VeniceGame.prototype.receiveAttack = function (text) {
-    if (this.dead || this.gameOver) return;
+    if (this.paused || this.dead || this.gameOver) return;
     this._spawnWord(text, true);
   };
 
@@ -336,6 +350,7 @@
   };
 
   VeniceGame.prototype.update = function (dt) {
+    if (this.paused) return;
     this.fx.update(dt);
     if (this._damageFlash > 0) this._damageFlash = Math.max(0, this._damageFlash - dt);
     if (this._healFlash > 0) this._healFlash = Math.max(0, this._healFlash - dt);

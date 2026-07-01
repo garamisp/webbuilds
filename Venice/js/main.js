@@ -231,6 +231,16 @@
     toast('☠ ' + nm + ' 게임오버!' + (healed ? '  라이프 +1 ❤' : ''));
     sysMsg(nm + ' 님이 수몰되었습니다. ' + (healed ? '(생존 보너스 라이프 +1)' : ''));
   });
+  // 상대 자리비움 / 복귀
+  net.on('peeraway', function (m) {
+    var o = opponents[m.id];
+    if (o) { o.card.classList.add('away'); o.lvEl.textContent = '자리비움'; }
+    if (o) sysMsg((o.name || '상대') + ' 님이 자리를 비웠습니다.');
+  });
+  net.on('peerback', function (m) {
+    var o = opponents[m.id];
+    if (o) o.card.classList.remove('away');
+  });
   net.on('chat', function (m) { chatMsg(m.name, m.text); });
 
   function updateNetLabel(count) {
@@ -241,10 +251,22 @@
   // 스냅샷 송신 + 스킬 UI 갱신 루프
   setInterval(function () {
     updateSkillUI();
-    if (net.connected && game.mode === 'battle') {
+    if (net.connected && game.mode === 'battle' && !document.hidden) {
       net.sendSnap(game.getSnapshot());
     }
   }, 130);
+
+  // 탭 숨김 = 자리비움. 오래 비우면 서버가 매치에서 제외 → 상대는 계속 진행.
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden) {
+      game.pause();
+      if (net.connected) net.sendAfk();
+    } else {
+      game.resume();
+      if (net.connected) net.sendBack();
+      focusType();
+    }
+  });
 
   // ---------- 상대 미니뷰 ----------
   function emptyHint() {
