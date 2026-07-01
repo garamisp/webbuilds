@@ -174,6 +174,16 @@
     typeRow.classList.add('fire');
   }
 
+  // 복붙 꼼수 차단: 긴 단어를 써서 복사→붙여넣기로 손 안 대고 클리어하는 것 방지.
+  // 복사/잘라내기/붙여넣기는 페이지 전반에서, 드롭(끌어놓기 삽입)은 입력창에서 막는다.
+  ['copy', 'cut', 'paste'].forEach(function (ev) {
+    document.addEventListener(ev, function (e) { e.preventDefault(); });
+  });
+  [typeInput, skillInput].forEach(function (el) {
+    el.addEventListener('drop', function (e) { e.preventDefault(); });
+    el.addEventListener('dragover', function (e) { e.preventDefault(); });
+  });
+
   function canPlay() {
     return startOverlay.classList.contains('hidden') &&
            overOverlay.classList.contains('hidden');
