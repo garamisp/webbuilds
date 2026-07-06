@@ -60,6 +60,8 @@
         case 'you': self._emit('you', m); break;
         case 'state': self._emit('state', m); break;
         case 'gameover': self._emit('gameover', m); break;
+        case 'chat': self._emit('chat', m); break;
+        case 'watermelon': self._emit('watermelon', m); break;
       }
     };
     ws.onclose = function () {
@@ -84,6 +86,8 @@
   };
   WMNet.prototype.sendAim = function (x) { this._send({ t: 'aim', x: x }); };
   WMNet.prototype.sendDrop = function (x) { this._send({ t: 'drop', x: x }); };
+  WMNet.prototype.sendChat = function (text) { this._send({ t: 'chat', text: text }); };
+  WMNet.prototype.sendName = function (name) { this._send({ t: 'name', name: name }); };
 
   global.WMNet = WMNet;
 })(window);

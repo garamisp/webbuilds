@@ -67,3 +67,62 @@ html, body {
 .over-title { font-size: 44px; font-weight: 800; color: #ff6b6b; }
 .over-sub { margin-top: 8px; font-size: 15px; opacity: .85; }
 .over-score { margin-top: 12px; font-size: 20px; font-weight: 700; color: #ffd76b; }
+
+#melons { background: rgba(46,168,74,.35); padding: 4px 10px; border-radius: 999px; }
+
+/* ---- 채팅 ---- */
+#chat {
+  position: fixed;
+  left: 12px;
+  bottom: 12px;
+  width: min(340px, 42vw);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  z-index: 5;
+}
+#chatlog {
+  max-height: 168px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 10px;
+  background: rgba(10,14,22,.5);
+  border: 1px solid rgba(120,140,180,.2);
+  border-radius: 10px;
+  font-size: 13px;
+  line-height: 1.4;
+  backdrop-filter: blur(3px);
+}
+#chatlog:empty { display: none; }
+#chatlog .line { word-break: break-word; }
+#chatlog .nm { font-weight: 700; color: #7fd1ff; }
+#chatlog .line.bot .nm { color: #ffd76b; }
+#chatlog .line.me .nm { color: #8fe0a0; }
+#chatlog .tx { color: #e8edf5; }
+#chatbar { display: flex; gap: 6px; }
+#chatname {
+  width: 84px; flex: 0 0 auto;
+  background: rgba(10,14,22,.65); color: #ffd76b;
+  border: 1px solid rgba(120,140,180,.3); border-radius: 8px;
+  padding: 7px 8px; font-size: 12px; user-select: text;
+}
+#chatinput {
+  flex: 1 1 auto; min-width: 0;
+  background: rgba(10,14,22,.65); color: #eef2f7;
+  border: 1px solid rgba(120,140,180,.3); border-radius: 8px;
+  padding: 7px 10px; font-size: 13px; user-select: text;
+}
+#chatinput:focus, #chatname:focus { outline: none; border-color: #2ea84a; }
+#chatsend {
+  flex: 0 0 auto;
+  background: rgba(46,168,74,.9); color: #fff; font-weight: 700;
+  border: none; border-radius: 8px; padding: 7px 12px; font-size: 13px; cursor: pointer;
+}
+#chatsend:hover { background: #2ea84a; }
+
+@media (max-width: 640px) {
+  #chat { width: 66vw; }
+  #chatlog { max-height: 120px; }
+}

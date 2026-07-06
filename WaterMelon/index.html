@@ -14,11 +14,21 @@
       <span class="tag">🍉 수박 io</span>
       <span id="players">👥 0</span>
       <span id="score">⭐ 0</span>
+      <span id="melons">🍉 0</span>
     </div>
     <div class="hud-right" id="conn">연결 중…</div>
   </div>
 
   <div id="hint">마우스로 조준 · 클릭 / 스페이스바로 공 떨어뜨리기</div>
+
+  <div id="chat">
+    <div id="chatlog"></div>
+    <div id="chatbar">
+      <input id="chatname" type="text" maxlength="16" autocomplete="off" placeholder="닉네임" />
+      <input id="chatinput" type="text" maxlength="120" autocomplete="off" placeholder="메시지 입력 후 Enter…" />
+      <button id="chatsend" type="button">전송</button>
+    </div>
+  </div>
 
   <div id="overlay" class="hidden">
     <div class="over-card">
