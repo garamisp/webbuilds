@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <title>🍉 수박게임 io — 협동</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <canvas id="c"></canvas>
+
+  <div id="hud">
+    <div class="hud-left">
+      <span class="tag">🍉 수박 io</span>
+      <span id="players">👥 0</span>
+      <span id="score">⭐ 0</span>
+    </div>
+    <div class="hud-right" id="conn">연결 중…</div>
+  </div>
+
+  <div id="hint">마우스로 조준 · 클릭 / 스페이스바로 공 떨어뜨리기</div>
+
+  <div id="overlay" class="hidden">
+    <div class="over-card">
+      <div class="over-title">💥 GAME OVER</div>
+      <div class="over-sub">경계선을 넘었어요! 곧 리셋됩니다…</div>
+      <div class="over-score" id="over-score"></div>
+    </div>
+  </div>
+
+  <script src="js/net.js"></script>
+  <script src="js/game.js"></script>
+</body>
+</html>

@@ -1,0 +1,17 @@
+{
+  "name": "watermelon-io-server",
+  "version": "1.0.0",
+  "description": "수박게임 io — 협동 · 권위 물리 서버 (WebSocket + Matter.js)",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "matter-js": "^0.20.0",
+    "ws": "^8.18.0"
+  }
+}
