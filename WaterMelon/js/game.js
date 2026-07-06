@@ -31,12 +31,20 @@
   var myAim = 900, myTier = 0;
   var lastDropAt = -9999;
   var dpr = Math.min(window.devicePixelRatio || 1, 2);
+  var afkMode = false, pausedMode = false;   // 자리비움/탭숨김으로 연결 종료됨
 
   // -------- net --------
-  net.on('open', function () { elConn.textContent = '🟢 접속됨'; });
-  net.on('close', function () { elConn.textContent = '🔴 재연결 중…'; });
-  net.on('error', function () { elConn.textContent = '🟠 연결 오류'; });
+  net.on('open', function () { elConn.textContent = '🟢 접속됨'; afkMode = false; pausedMode = false; });
+  net.on('close', function () { if (!afkMode && !pausedMode) elConn.textContent = '🔴 재연결 중…'; });
+  net.on('error', function () { if (!afkMode && !pausedMode) elConn.textContent = '🟠 연결 오류'; });
   net.on('unavailable', function () { elConn.textContent = '서버 미설정'; });
+  net.on('afk', function () { afkMode = true; elConn.textContent = '💤 자리비움 — 클릭해 재접속'; });
+  net.on('paused', function () { pausedMode = true; elConn.textContent = '⏸ 탭 나감 — 돌아오면 자동 재접속'; });
+
+  function resumeIfPaused() {
+    if (afkMode || pausedMode) { afkMode = false; pausedMode = false; elConn.textContent = '연결 중…'; net.resume(); return true; }
+    return false;
+  }
 
   net.on('welcome', function (m) {
     cfg = m;
@@ -155,11 +163,12 @@
     net.sendDrop(myAim);
   }
   canvas.addEventListener('mousemove', function (e) { setAim(e.clientX); });
-  canvas.addEventListener('mousedown', function (e) { setAim(e.clientX); drop(); });
+  canvas.addEventListener('mousedown', function (e) { if (resumeIfPaused()) return; setAim(e.clientX); drop(); });
   canvas.addEventListener('touchmove', function (e) { setAim(e.touches[0].clientX); e.preventDefault(); }, { passive: false });
-  canvas.addEventListener('touchstart', function (e) { setAim(e.touches[0].clientX); drop(); e.preventDefault(); }, { passive: false });
+  canvas.addEventListener('touchstart', function (e) { e.preventDefault(); if (resumeIfPaused()) return; setAim(e.touches[0].clientX); drop(); }, { passive: false });
   window.addEventListener('keydown', function (e) {
     if (typingInChat()) return;                       // 채팅 입력 중이면 게임 단축키 무시
+    if (afkMode || pausedMode) { if (e.code === 'Space' || e.code === 'Enter' || e.code === 'NumpadEnter') { e.preventDefault(); resumeIfPaused(); } return; }
     if (e.code === 'Space') { e.preventDefault(); drop(); }
     else if (e.code === 'Enter' || e.code === 'NumpadEnter') { e.preventDefault(); chatinput.focus(); }
   });

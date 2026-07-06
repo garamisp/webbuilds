@@ -31,6 +31,7 @@ const RESET_PAUSE_MS = 2600;
 const BOT_COUNT = parseInt(process.env.BOT_COUNT || '3', 10);   // 상시 봇 수
 const CHAT_MAX = 120;          // 채팅 최대 길이
 const CHAT_MIN_GAP_MS = 500;   // 채팅 최소 간격/인당
+const AFK_MS = parseInt(process.env.AFK_MS || '240000', 10);   // 무입력 자리비움 → 연결 종료(비용 절감)
 
 // tier 별 반지름 (0..10): 체리 -> ... -> 멜론 -> 수박
 const RADII = [24, 32, 42, 54, 68, 84, 102, 122, 144, 168, 196];
@@ -142,7 +143,18 @@ function stepPhysics() {
 // ---- 유휴 절전: 접속자가 0명이면 물리/봇/브로드캐스트 루프를 멈춰 CPU를 아낀다.
 //      첫 접속 시 깨어나 새 판을 시작하고, 마지막 접속자가 나가면 다시 멈춘다.
 let running = false;
-let physTimer = null, botTimer = null, castTimer = null;
+let physTimer = null, botTimer = null, castTimer = null, afkTimer = null;
+
+// 자리비움(무입력) 접속자 연결 종료 → 방치된 탭이 서버를 붙잡지 못하게(Serverless 재우기 유도)
+function checkAfk() {
+  const now = Date.now();
+  for (const [ws, st] of clients) {
+    if (now - st.lastInput > AFK_MS) {
+      try { send(ws, { t: 'afk' }); } catch (e) {}
+      try { ws.close(); } catch (e) {}
+    }
+  }
+}
 
 function clearField() {
   for (const b of Composite.allBodies(world)) if (b.isBall) Composite.remove(world, b);
@@ -156,13 +168,14 @@ function startLoops() {
   physTimer = setInterval(stepPhysics, dtMs);
   botTimer = setInterval(botTick, 60);
   castTimer = setInterval(broadcastState, 1000 / BROADCAST_HZ);
+  afkTimer = setInterval(checkAfk, 15000);
   console.log('▶ 플레이어 접속 — 게임 루프 시작');
 }
 function stopLoops() {
   if (!running) return;
   running = false;
-  clearInterval(physTimer); clearInterval(botTimer); clearInterval(castTimer);
-  physTimer = botTimer = castTimer = null;
+  clearInterval(physTimer); clearInterval(botTimer); clearInterval(castTimer); clearInterval(afkTimer);
+  physTimer = botTimer = castTimer = afkTimer = null;
   clearField();
   console.log('⏸ 접속자 0명 — 게임 루프 정지(절전)');
 }
@@ -341,7 +354,7 @@ function broadcast(obj) {
 
 wss.on('connection', (ws) => {
   const id = pid++;
-  const st = { id, isBot: false, name: '손님' + id, aimX: WORLD_W / 2, nextTier: randTier(), lastDrop: 0, lastChat: 0 };
+  const st = { id, isBot: false, name: '손님' + id, aimX: WORLD_W / 2, nextTier: randTier(), lastDrop: 0, lastChat: 0, lastInput: Date.now() };
   clients.set(ws, st);
   if (clients.size === 1) startLoops();   // 첫 접속자 → 깨우기
   send(ws, {
@@ -355,6 +368,7 @@ wss.on('connection', (ws) => {
     try { m = JSON.parse(data.toString('utf8')); } catch (e) { return; }   // 명시적 UTF-8
     const pl = clients.get(ws);
     if (!pl) return;
+    pl.lastInput = Date.now();   // 모든 입력 = 활동 (자리비움 타이머 리셋)
 
     if (m.t === 'aim') {
       if (typeof m.x === 'number' && isFinite(m.x)) pl.aimX = clamp(m.x, 0, WORLD_W);

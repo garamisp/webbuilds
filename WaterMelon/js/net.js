@@ -38,7 +38,45 @@
     this._url = url;
     this._wantOpen = true;
     this._open();
+    this._watchVisibility();
     return true;
+  };
+
+  // 연결을 완전히 끊고 재시도도 멈춘다(자리비움/탭 숨김 시).
+  WMNet.prototype._teardown = function () {
+    this._wantOpen = false;
+    clearTimeout(this._retryT);
+    if (this.ws) { try { this.ws.close(); } catch (e) {} this.ws = null; }
+    this.connected = false;
+  };
+  // 다시 접속(클릭/탭 복귀 시).
+  WMNet.prototype.resume = function () {
+    if (this._wantOpen || this.connected) return;
+    if (!this._url) { this.connect(); return; }
+    this.afkKicked = false;
+    this._pausedHidden = false;
+    this._wantOpen = true;
+    this._retry = 0;
+    this._open();
+  };
+  // 탭이 오래 숨겨지면 연결을 끊어 서버가 잠들게 하고, 돌아오면 자동 재접속.
+  WMNet.prototype._watchVisibility = function () {
+    if (this._visBound) return;
+    this._visBound = true;
+    var self = this;
+    document.addEventListener('visibilitychange', function () {
+      if (document.hidden) {
+        clearTimeout(self._hideT);
+        self._hideT = setTimeout(function () {
+          if (document.hidden && (self.connected || self._wantOpen)) {
+            self._pausedHidden = true; self._teardown(); self._emit('paused');
+          }
+        }, 20000);
+      } else {
+        clearTimeout(self._hideT);
+        if (self._pausedHidden && !self.afkKicked) self.resume();
+      }
+    });
   };
 
   WMNet.prototype._open = function () {
@@ -62,6 +100,7 @@
         case 'gameover': self._emit('gameover', m); break;
         case 'chat': self._emit('chat', m); break;
         case 'watermelon': self._emit('watermelon', m); break;
+        case 'afk': self.afkKicked = true; self._teardown(); self._emit('afk'); break;
       }
     };
     ws.onclose = function () {
