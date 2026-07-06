@@ -134,10 +134,38 @@ function triggerGameOver() {
 }
 
 const dtMs = 1000 / TPS;
-setInterval(() => {
+function stepPhysics() {
   Engine.update(engine, dtMs);
   if (!over) processDanger(dtMs);
-}, dtMs);
+}
+
+// ---- 유휴 절전: 접속자가 0명이면 물리/봇/브로드캐스트 루프를 멈춰 CPU를 아낀다.
+//      첫 접속 시 깨어나 새 판을 시작하고, 마지막 접속자가 나가면 다시 멈춘다.
+let running = false;
+let physTimer = null, botTimer = null, castTimer = null;
+
+function clearField() {
+  for (const b of Composite.allBodies(world)) if (b.isBall) Composite.remove(world, b);
+  dead.clear();
+  ballCount = 0; score = 0; watermelons = 0; over = false;
+}
+function startLoops() {
+  if (running) return;
+  running = true;
+  clearField();
+  physTimer = setInterval(stepPhysics, dtMs);
+  botTimer = setInterval(botTick, 60);
+  castTimer = setInterval(broadcastState, 1000 / BROADCAST_HZ);
+  console.log('▶ 플레이어 접속 — 게임 루프 시작');
+}
+function stopLoops() {
+  if (!running) return;
+  running = false;
+  clearInterval(physTimer); clearInterval(botTimer); clearInterval(castTimer);
+  physTimer = botTimer = castTimer = null;
+  clearField();
+  console.log('⏸ 접속자 0명 — 게임 루프 정지(절전)');
+}
 
 // -------------------------------------------------------------- helpers ---
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
@@ -226,7 +254,7 @@ function maybeBotChat(bot) {
   pushChat(bot.name, BOT_CHATTER[Math.floor(Math.random() * BOT_CHATTER.length)], true);
 }
 
-setInterval(() => {
+function botTick() {
   if (bots.length === 0) return;
   const now = Date.now();
   const ballsArr = [];
@@ -258,7 +286,7 @@ setInterval(() => {
       maybeBotChat(bot);
     }
   }
-}, 60);
+}
 
 // ------------------------------------------------------------------ chat ---
 const chatHistory = [];                  // 최근 메시지 (신규 접속자에게 전달)
@@ -294,7 +322,7 @@ function serveStatic(req, res) {
 const server = http.createServer((req, res) => {
   if (req.url && req.url.startsWith('/health')) {
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ ok: true, balls: ballCount, players: clients.size, bots: bots.length, watermelons }));
+    res.end(JSON.stringify({ ok: true, running, balls: ballCount, players: clients.size, bots: bots.length, watermelons }));
     return;
   }
   serveStatic(req, res);
@@ -315,6 +343,7 @@ wss.on('connection', (ws) => {
   const id = pid++;
   const st = { id, isBot: false, name: '손님' + id, aimX: WORLD_W / 2, nextTier: randTier(), lastDrop: 0, lastChat: 0 };
   clients.set(ws, st);
+  if (clients.size === 1) startLoops();   // 첫 접속자 → 깨우기
   send(ws, {
     t: 'welcome', id, name: st.name, w: WORLD_W, h: WORLD_H, lineY: LINE_Y,
     radii: RADII, maxTier: MAX_TIER, spawnY: SPAWN_Y, tier: st.nextTier,
@@ -355,12 +384,12 @@ wss.on('connection', (ws) => {
     }
   });
 
-  ws.on('close', () => clients.delete(ws));
-  ws.on('error', () => clients.delete(ws));
+  ws.on('close', () => { clients.delete(ws); if (clients.size === 0) stopLoops(); });
+  ws.on('error', () => { clients.delete(ws); if (clients.size === 0) stopLoops(); });
 });
 
 // 상태 브로드캐스트 (공 + 참가자 커서 + 점수/수박). 참가자 항목: [id, aimX, nextTier, isBot]
-setInterval(() => {
+function broadcastState() {
   const b = [];
   for (const body of Composite.allBodies(world)) {
     if (!body.isBall) continue;
@@ -370,7 +399,7 @@ setInterval(() => {
   for (const st of clients.values()) p.push([st.id, Math.round(st.aimX), st.nextTier, 0]);
   for (const bt of bots) p.push([bt.id, Math.round(bt.aimX), bt.nextTier, 1]);
   broadcast({ t: 'state', b, p, s: score, o: over, wm: watermelons });
-}, 1000 / BROADCAST_HZ);
+}
 
 const PORT = process.env.PORT || 8790;
-server.listen(PORT, () => console.log(`🍉 Watermelon.io server listening on :${PORT} (bots: ${bots.length})`));
+server.listen(PORT, () => console.log(`🍉 Watermelon.io server listening on :${PORT} (bots: ${bots.length}, idle-sleep on)`));
