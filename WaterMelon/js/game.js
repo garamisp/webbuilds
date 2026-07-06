@@ -102,7 +102,9 @@
     chatinput.value = '';
   }
   chatinput.addEventListener('keydown', function (e) {
-    if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); sendChatMsg(); }
+    // Enter: 전송 후 게임으로 복귀(blur) → 스페이스바 조작 재개. Esc: 취소하고 복귀.
+    if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); sendChatMsg(); chatinput.blur(); }
+    else if (e.key === 'Escape') { e.preventDefault(); chatinput.value = ''; chatinput.blur(); }
   });
   chatsend.addEventListener('click', sendChatMsg);
   chatname.addEventListener('change', function () {
@@ -157,7 +159,9 @@
   canvas.addEventListener('touchmove', function (e) { setAim(e.touches[0].clientX); e.preventDefault(); }, { passive: false });
   canvas.addEventListener('touchstart', function (e) { setAim(e.touches[0].clientX); drop(); e.preventDefault(); }, { passive: false });
   window.addEventListener('keydown', function (e) {
-    if (e.code === 'Space' && !typingInChat()) { e.preventDefault(); drop(); }
+    if (typingInChat()) return;                       // 채팅 입력 중이면 게임 단축키 무시
+    if (e.code === 'Space') { e.preventDefault(); drop(); }
+    else if (e.code === 'Enter' || e.code === 'NumpadEnter') { e.preventDefault(); chatinput.focus(); }
   });
 
   // -------- draw helpers --------
@@ -189,45 +193,66 @@
   }
 
   function drawFlyaways(v, t) {
+    var wmTier = cfg.maxTier;               // 수박 = 최고 등급
     for (var i = flyaways.length - 1; i >= 0; i--) {
       var fa = flyaways[i];
       var age = (t - fa.t0) / 1000;
-      if (age > 1.7) { flyaways.splice(i, 1); continue; }
+      if (age > 1.95) { flyaways.splice(i, 1); continue; }
       var ox = v.ox + fa.x * v.sc, oy = v.oy + fa.y * v.sc;
-      // sparkles
+
+      // 완성 순간엔 제자리에서 팡(0~0.6s), 그 뒤 위로 발사
+      var lift = Math.max(0, age - 0.6);
+      var rise = lift * lift * 760;
+      var wy = oy - rise * v.sc;
+      var wx = ox + Math.sin(age * 7) * 10 * v.sc;
+      var scale;
+      if (age < 0.22) scale = 0.45 + (age / 0.22) * 0.75;               // 팝 인 0.45 -> 1.2
+      else if (age < 0.6) scale = 1.2 - Math.sin((age - 0.22) / 0.38 * Math.PI) * 0.08; // 살짝 출렁
+      else scale = Math.max(0.32, 1.12 - (age - 0.6) / 1.35 * 0.8);     // 날아가며 축소
+      var alpha = age < 1.4 ? 1 : Math.max(0, 1 - (age - 1.4) / 0.55);
+      var R = cfg.radii[wmTier] * v.sc * scale;
+
+      // 완성 링 플래시
+      if (age < 0.55) {
+        ctx.save();
+        ctx.globalAlpha = Math.max(0, 0.6 - age);
+        ctx.strokeStyle = '#c7f5a0';
+        ctx.lineWidth = 5 * v.sc;
+        ctx.beginPath(); ctx.arc(ox, oy, R * (1 + age * 2.6), 0, Math.PI * 2); ctx.stroke();
+        ctx.restore();
+      }
+      // 반짝이
       ctx.save();
       for (var k = 0; k < fa.sparks.length; k++) {
         var sp = fa.sparks[k];
-        var sa = Math.min(1, age / 0.6);
+        var sa = Math.min(1, age / 0.7);
         var px = ox + Math.cos(sp.a) * sp.spd * age * v.sc;
         var py = oy + Math.sin(sp.a) * sp.spd * age * v.sc;
         ctx.globalAlpha = Math.max(0, 1 - sa);
         ctx.fillStyle = k % 2 ? '#ffe27a' : '#8fe0a0';
-        ctx.beginPath(); ctx.arc(px, py, Math.max(1.5, 5 * v.sc) * (1 - sa * 0.6), 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(px, py, Math.max(1.5, 6 * v.sc) * (1 - sa * 0.6), 0, Math.PI * 2); ctx.fill();
       }
       ctx.restore();
-      // 팝 → 잠깐 머무름 → 위로 날아감
-      var lift = Math.max(0, age - 0.32);
-      var rise = lift * lift * 640;
-      var wy = oy - rise * v.sc;
-      var wx = ox + Math.sin(age * 7) * 14 * v.sc;
-      var scale = age < 0.2 ? (age / 0.2) * 1.3 : 1.3 - Math.min(1, (age - 0.2) / 1.5) * 0.4;
-      var alpha = age < 1.2 ? 1 : Math.max(0, 1 - (age - 1.2) / 0.5);
-      var size = 150 * v.sc * scale;
+      // 거대한 둥근 수박 (필드 공과 같은 그라데이션 스타일)
       ctx.save();
       ctx.globalAlpha = alpha;
       ctx.translate(wx, wy);
-      ctx.rotate(age * 3);
-      ctx.font = size + 'px serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText('🍉', 0, 0);
+      ctx.rotate(lift * 2.0);               // 날아갈 때만 회전
+      var g = ctx.createRadialGradient(-R * 0.3, -R * 0.3, R * 0.1, 0, 0, R);
+      g.addColorStop(0, lighten(COLORS[wmTier], 0.35));
+      g.addColorStop(1, COLORS[wmTier]);
+      ctx.beginPath(); ctx.arc(0, 0, R, 0, Math.PI * 2); ctx.fillStyle = g; ctx.fill();
+      ctx.lineWidth = Math.max(1, R * 0.05); ctx.strokeStyle = 'rgba(0,0,0,.18)'; ctx.stroke();
+      ctx.font = (R * 1.15) + 'px serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(EMOJI[wmTier], 0, R * 0.05);
       ctx.restore();
-      // "+1" text
+      // "수박 완성! +1"
       ctx.save();
-      ctx.globalAlpha = Math.max(0, 1 - age / 0.9);
+      ctx.globalAlpha = Math.max(0, 1 - age / 1.2);
       ctx.fillStyle = '#ffd76b';
-      ctx.font = 'bold ' + (30 * v.sc) + 'px sans-serif';
+      ctx.font = 'bold ' + (32 * v.sc) + 'px sans-serif';
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText('수박 완성! +1', ox, oy - 90 * v.sc - age * 60 * v.sc);
+      ctx.fillText('🍉 수박 완성! +1', ox, oy - cfg.radii[wmTier] * 0.75 * v.sc - age * 50 * v.sc);
       ctx.restore();
     }
   }

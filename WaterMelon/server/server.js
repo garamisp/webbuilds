@@ -193,15 +193,18 @@ function predictLanding(x, r, ballsArr) {
 function botChoose(bot, ballsArr, parts) {
   const T = bot.nextTier;
   const r = RADII[T];
-  let bestX = bot.aimX, bestS = -Infinity, anySafe = false;
+  let bestX = bot.aimX, bestS = -Infinity, bestOk = false;
   for (let x = r + 6; x <= WORLD_W - r - 6; x += 22) {
     const L = predictLanding(x, r, ballsArr);
-    const landsSafe = L.restY > LINE_Y + r * 2.2;   // 경계선 근처면 위험
+    const isMerge = (L.supTier === T);              // 같은 등급 위 → 즉시 합치기
+    const landsSafe = L.restY > LINE_Y + r * 2.2;   // 낮고 안전한 자리
+    // 합치기는 공간을 오히려 비우므로 높이와 무관하게 허용. 그 외엔 안전한 자리만.
+    const ok = isMerge || landsSafe;
     let s = 0;
-    if (L.supTier === T) s += 1300;                 // 즉시 합치기!
+    if (isMerge) s += 1600;                         // 합치기 최우선 (꽉 찼을 때 특히 중요)
     else if (L.supTier === T - 1) s += 130;         // 다음 합치기 준비에 유리
     s += L.restY * 0.7;                             // 낮게 쌓이는 곳 선호(계곡 메우기)
-    if (landsSafe) anySafe = true; else s -= 4000;  // 위험 지점 강하게 회피
+    if (!ok) s -= 4000;                             // 합치기도 안전지대도 아니면 회피
     for (let k = 0; k < parts.length; k++) {
       const o = parts[k];
       if (o === bot) continue;
@@ -210,9 +213,9 @@ function botChoose(bot, ballsArr, parts) {
       if (d < claim) s -= (o.isBot ? 180 : 800) * (1 - d / claim);
     }
     s += Math.random() * 40;                        // 살짝 흔들어 자연스럽게/분산
-    if (s > bestS) { bestS = s; bestX = x; }
+    if (s > bestS) { bestS = s; bestX = x; bestOk = ok; }
   }
-  return { x: bestX, safe: anySafe && bestS > -3000 };
+  return { x: bestX, safe: bestOk };
 }
 
 function maybeBotChat(bot) {
