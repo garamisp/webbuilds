@@ -29,10 +29,12 @@ const cv = document.getElementById("c"), ctx = cv.getContext("2d");
 const ui = document.getElementById("ui"), panel = document.getElementById("panel");
 let W = 0, H = 0, F = 0, DPR = 1; // DPR 1 = far fewer pixels to fill (perf)
 function resize(){
-  W = window.innerWidth; H = window.innerHeight;
-  cv.width = W * DPR; cv.height = H * DPR;
-  cv.style.width = W + "px"; cv.style.height = H + "px";
-  ctx.setTransform(DPR,0,0,DPR,0,0);
+  const iw = window.innerWidth || 1280, ih = window.innerHeight || 720;
+  const s = Math.min(1, 1280 / iw);                 // cap backing buffer at 1280px wide (perf)
+  W = Math.max(2, Math.round(iw * s)); H = Math.max(2, Math.round(ih * s));
+  cv.width = W; cv.height = H;                        // low-res backing buffer ...
+  cv.style.width = iw + "px"; cv.style.height = ih + "px"; // ... CSS-stretched to fill the window
+  ctx.setTransform(1,0,0,1,0,0);
   F = (H * 0.5) / Math.tan(0.5 * 75 * Math.PI/180); // focal length from ~75° vertical fov
 }
 addEventListener("resize", resize); resize();
