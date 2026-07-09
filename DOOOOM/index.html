@@ -244,6 +244,7 @@ function drawHUD(){
   // wave / kills
   ctx.textAlign="right"; ctx.fillText("WAVE "+wave+"   KILLS "+kills, W-20, 28);
   ctx.fillText("SURVIVED "+survived.toFixed(0)+"s", W-20, 48); ctx.textAlign="left";
+  ctx.fillText(Math.round(fps)+" FPS", 20, 24);
 
   // radar
   const rr=54, rx=W-rr-22, ry=H-rr-22;
@@ -337,9 +338,11 @@ function gameover(){ state="over"; document.exitPointerLock&&document.exitPointe
 reset(); titleScreen();  // reset() defines all state vars so the title frame is safe
 
 // ---- main loop ----
-let last=performance.now();
+let last=performance.now(), fps=0;
 function frame(now){ requestAnimationFrame(frame); // schedule first so a draw error never kills the loop
-  let dt=(now-last)/1000; last=now; if(dt>0.05)dt=0.05;
+  let dt=(now-last)/1000; last=now;
+  if(dt>0 && dt<1) fps = fps ? fps*0.92 + (1/dt)*0.08 : 1/dt; // real measured frame rate
+  if(dt>0.05)dt=0.05;
   update(dt); render();
   if(toastT>0 && state==="play"){ toastT-=dt; ctx.save(); ctx.globalAlpha=Math.min(1,toastT);
     ctx.fillStyle="#5fff9f"; ctx.font="bold 40px 'Courier New',monospace"; ctx.textAlign="center";
