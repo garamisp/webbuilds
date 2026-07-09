@@ -43,7 +43,7 @@ addEventListener("resize", resize); resize();
 const keys = {};
 addEventListener("keydown", e=>{ keys[e.code]=true; if(["Space","ArrowLeft","ArrowRight","ArrowUp","ArrowDown"].includes(e.code)) e.preventDefault();
   if(e.code==="Enter" && state!=="play") start();
-  if(state==="play"){ const m=/^Digit([1-6])$/.exec(e.code); if(m) selectWeapon(+m[1]-1);
+  if(state==="play"){ const m=/^Digit([1-7])$/.exec(e.code); if(m) selectWeapon(+m[1]-1);
     if(e.code==="KeyQ") cycleWeapon(-1); if(e.code==="KeyE") cycleWeapon(1); } });
 addEventListener("keyup", e=>{ keys[e.code]=false; });
 addEventListener("wheel", e=>{ if(state==="play") cycleWeapon(e.deltaY>0?1:-1); }, {passive:true});
@@ -85,7 +85,7 @@ let curWep=1, owned=[], ammoStore={}, gunKick=0, wepFlash=0;
 function reset(){
   cam.x=0; cam.z=0; cam.yaw=0;
   hp=100; wave=0; kills=0; survived=0;
-  owned=[true,true,false,false,false,false]; curWep=1; wepFlash=0; gunKick=0;
+  owned=[true,true,false,false,false,false,false]; curWep=1; wepFlash=0; gunKick=0;
   ammoStore={bull:60, shel:0, rkt:0, cell:0};
   enemies.length=0; shots.length=0; pshots.length=0; frags.length=0; obstacles.length=0; pickups.length=0;
   between=true; betweenT=2.0; spawnQueue=0; spawnCd=0;
@@ -93,6 +93,9 @@ function reset(){
   const R = ()=> (Math.random()*2-1)*ARENA*0.72;
   for(let i=0;i<10;i++){ const x=R(), z=R(); if(Math.hypot(x,z)<8){i--;continue;}
     obstacles.push({x,z,s:2+Math.random()*3,cube:Math.random()<0.5}); }
+  // hidden secret: one BFG-9000 stashed out in the arena, waiting to be found
+  let bxg,bzg; do{ bxg=R(); bzg=R(); }while(Math.hypot(bxg,bzg)<12);
+  pickups.push({x:bxg, z:bzg, y:0.6, kind:"bfg", life:1e12, t:0});
 }
 function start(){ if(state==="play")return; reset(); state="play"; ui.className=""; panel.innerHTML="";
   if(document.pointerLockElement!==cv) cv.requestPointerLock(); beep(440,0.08,"square",0.05,880); }
@@ -121,6 +124,7 @@ const WEAPONS = [
  {name:"CHAINGUN", ammo:"bull", use:1, rate:0.085, kind:"hit",  dmg:10, spread:30},
  {name:"ROCKET",   ammo:"rkt",  use:1, rate:0.82,  kind:"proj", dmg:85, splash:6.5, pspd:26, col:"#ffb060"},
  {name:"PLASMA",   ammo:"cell", use:1, rate:0.075, kind:"proj", dmg:18, splash:0,   pspd:42, col:"#8fd4ff"},
+ {name:"BFG",      ammo:"cell", use:40, rate:1.0, kind:"proj", dmg:400, splash:14, pspd:18, col:"#a8ff7d", big:true},
 ];
 function wepSound(w){
   if(w.kind==="melee"){ beep(120,0.05,"square",0.05,60); noise(0.05,0.06); }
@@ -128,6 +132,7 @@ function wepSound(w){
   else if(w.name==="CHAINGUN"){ beep(1000,0.04,"square",0.05,320); noise(0.03,0.05); }
   else if(w.name==="ROCKET"){ beep(150,0.22,"sawtooth",0.09,45); noise(0.1,0.08); }
   else if(w.name==="PLASMA"){ beep(1500,0.05,"sine",0.05,900); }
+  else if(w.name==="BFG"){ beep(70,0.5,"sawtooth",0.1,240); noise(0.4,0.14); }
   else { beep(880,0.05,"square",0.055,220); noise(0.04,0.05); }
 }
 function selectWeapon(i){ if(i<0||i>=WEAPONS.length||!owned[i]||i===curWep) return;
@@ -141,7 +146,10 @@ function giveWeapon(i,announce){ if(owned[i])return; owned[i]=true;
 function boomFx(x,z){ for(let k=0;k<16;k++) frags.push({x,y:1,z,
   dx:(Math.random()*2-1)*8, dy:Math.random()*7, dz:(Math.random()*2-1)*8, life:0.6}); }
 function collect(p){ beep(1200,0.06,"square",0.04,1600);
-  if(p.kind==="health"){ hp=Math.min(100,hp+p.n); } else { addAmmo(p.kind,p.n); } }
+  if(p.kind==="health"){ hp=Math.min(100,hp+p.n); }
+  else if(p.kind==="bfg"){ owned[6]=true; addAmmo("cell",120); selectWeapon(6);
+    toast("★ SECRET: BFG-9000 ★"); beep(70,0.5,"sawtooth",0.1,260); noise(0.4,0.12); }
+  else { addAmmo(p.kind,p.n); } }
 
 // ---- 3D projection with near-plane clip ----
 function toCam(px,py,pz){
@@ -236,21 +244,25 @@ function render(){
     ctx.moveTo(p.sx-r,p.sy); ctx.lineTo(p.sx+r,p.sy); ctx.moveTo(p.sx,p.sy-r); ctx.lineTo(p.sx,p.sy+r); }
   ctx.stroke();
 
-  // player projectiles (bright ringed cross)
-  for(const s of pshots){ const p=proj(s.x,s.y,s.z); if(!p)continue; const r=Math.max(2.5,F*0.35/p.z);
-    ctx.beginPath(); ctx.strokeStyle=s.col; ctx.lineWidth=2;
+  // player projectiles (bright ringed cross; BFG = big spiked orb)
+  for(const s of pshots){ const p=proj(s.x,s.y,s.z); if(!p)continue; const r=Math.max(2.5,F*(s.big?1.3:0.35)/p.z);
+    ctx.beginPath(); ctx.strokeStyle=s.col; ctx.lineWidth=s.big?2.5:2;
     ctx.moveTo(p.sx-r,p.sy); ctx.lineTo(p.sx+r,p.sy); ctx.moveTo(p.sx,p.sy-r); ctx.lineTo(p.sx,p.sy+r);
-    ctx.moveTo(p.sx+r*0.7,p.sy); ctx.arc(p.sx,p.sy,r*0.7,0,7); ctx.stroke(); }
+    ctx.moveTo(p.sx+r*0.7,p.sy); ctx.arc(p.sx,p.sy,r*0.7,0,7);
+    if(s.big){ ctx.moveTo(p.sx+r,p.sy); ctx.arc(p.sx,p.sy,r,0,7);
+      for(let a=0;a<8;a++){ const an=a*0.785+last/220; ctx.moveTo(p.sx,p.sy); ctx.lineTo(p.sx+Math.cos(an)*r*1.35, p.sy+Math.sin(an)*r*1.35);} }
+    ctx.stroke(); }
 
-  // pickups (spinning wireframe diamond + letter)
-  for(const p of pickups){ const pr=proj(p.x, 0.3+Math.sin(p.t*3)*0.15, p.z); if(!pr)continue;
-    const s=Math.max(4,F*0.5/pr.z), a=p.t*2, col=p.kind==="health"?"#ff5f7f":"#e8d24a";
+  // pickups (spinning wireframe diamond + letter; BFG = bigger, ringed, green)
+  for(const p of pickups){ const isB=p.kind==="bfg"; const pr=proj(p.x, 0.3+Math.sin(p.t*3)*0.15, p.z); if(!pr)continue;
+    const s=Math.max(4,F*(isB?0.9:0.5)/pr.z), a=p.t*2, col=p.kind==="health"?"#ff5f7f":(isB?"#a8ff7d":"#e8d24a");
     ctx.beginPath(); ctx.strokeStyle=col; ctx.lineWidth=1.6;
     for(let k=0;k<4;k++){ const a1=a+k*Math.PI/2, a2=a+(k+1)*Math.PI/2;
       ctx.moveTo(pr.sx+Math.cos(a1)*s, pr.sy+Math.sin(a1)*s); ctx.lineTo(pr.sx+Math.cos(a2)*s, pr.sy+Math.sin(a2)*s); }
+    if(isB){ ctx.moveTo(pr.sx+s*1.4,pr.sy); ctx.arc(pr.sx,pr.sy,s*1.4,0,7); }
     ctx.stroke();
     ctx.fillStyle=col; ctx.font="bold "+Math.max(8,Math.round(s*0.9))+"px 'Courier New',monospace"; ctx.textAlign="center"; ctx.textBaseline="middle";
-    ctx.fillText(p.kind==="health"?"+":(p.kind==="bull"?"B":p.kind==="shel"?"S":p.kind==="rkt"?"R":"C"), pr.sx, pr.sy);
+    ctx.fillText({health:"+",bull:"B",shel:"S",rkt:"R",cell:"C",bfg:"7"}[p.kind], pr.sx, pr.sy);
     ctx.textBaseline="alphabetic"; ctx.textAlign="left"; }
 
   // fragments (death lines)
@@ -289,14 +301,17 @@ function drawHUD(){
   // radar — top-right of the 3D view
   { const rr=46, rx=W-rr-16, ry=rr+16;
     ctx.beginPath(); ctx.strokeStyle=g; ctx.lineWidth=1.2; ctx.arc(rx,ry,rr,0,7); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(rx,ry-5); ctx.lineTo(rx,ry+5); ctx.moveTo(rx-5,ry); ctx.lineTo(rx+5,ry); ctx.stroke();
     const sw=(last/900)%(Math.PI*2);
-    ctx.beginPath(); ctx.strokeStyle="rgba(95,255,159,.5)"; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.strokeStyle="rgba(95,255,159,.35)"; ctx.lineWidth=1;
     ctx.moveTo(rx,ry); ctx.lineTo(rx+Math.sin(sw)*rr, ry-Math.cos(sw)*rr); ctx.stroke();
-    const cyr=Math.cos(-cam.yaw), syr=Math.sin(-cam.yaw);
+    // player marker: triangle pointing UP = the direction the player faces
+    ctx.fillStyle=g; ctx.beginPath(); ctx.moveTo(rx,ry-7); ctx.lineTo(rx-5,ry+5); ctx.lineTo(rx+5,ry+5); ctx.closePath(); ctx.fill();
+    // blips in camera space: forward(+depth)=up, right(+x)=right — matches the 3D view
+    const rsy=Math.sin(cam.yaw), rcy=Math.cos(cam.yaw), sc=rr/ARENA;
     for(const e of enemies){ const dx=e.x-cam.x, dz=e.z-cam.z;
-      let lx=dx*cyr-dz*syr, lz=dx*syr+dz*cyr; const d=Math.hypot(lx,lz)/ARENA*rr;
-      const ang=Math.atan2(lx,lz); const bxx=rx+Math.sin(ang)*Math.min(d,rr), byy=ry-Math.cos(ang)*Math.min(d,rr);
+      const exr=dx*rcy-dz*rsy, fwd=dx*rsy+dz*rcy;
+      let bxx=rx+exr*sc, byy=ry-fwd*sc;
+      const ox=bxx-rx, oy=byy-ry, od=Math.hypot(ox,oy); if(od>rr){ bxx=rx+ox/od*rr; byy=ry+oy/od*rr; }
       ctx.fillStyle=e.t.col; ctx.fillRect(bxx-1.5,byy-1.5,3,3); } }
 
   // ===================== CLASSIC DOOM STATUS BAR =====================
@@ -325,11 +340,11 @@ function drawHUD(){
 
   // 3) ARMS grid (slots 1-6; owned lit, current boxed)
   cap(2,3,"ARMS");
-  { const gx=px[2]+(px[3]-px[2])*0.30, gy=y0+38, cw=(px[3]-px[2])*0.22, ch=(BH-48)/2;
-    ctx.font="bold 15px 'Courier New',monospace"; ctx.textAlign="center"; ctx.textBaseline="middle";
-    for(let n=1;n<=6;n++){ const idx=n-1, c=(n-1)%3, r=Math.floor((n-1)/3), X=gx+c*cw, Y=gy+r*ch;
-      if(idx===curWep){ ctx.strokeStyle=gb; ctx.lineWidth=1; ctx.strokeRect(X-9,Y-9,18,18); }
-      ctx.fillStyle= idx===curWep? gb : (owned[idx]? g : gd); ctx.fillText(n, X, Y); }
+  { const pw=px[3]-px[2], cw=(pw-14)/4, gx=px[2]+7+cw/2, gy=y0+38, ch=(BH-48)/2;
+    ctx.font="bold 13px 'Courier New',monospace"; ctx.textAlign="center"; ctx.textBaseline="middle";
+    for(let n=1;n<=7;n++){ const idx=n-1, c=(n-1)%4, r=Math.floor((n-1)/4), X=gx+c*cw, Y=gy+r*ch;
+      if(idx===curWep){ ctx.strokeStyle=gb; ctx.lineWidth=1; ctx.strokeRect(X-8,Y-9,16,18); }
+      ctx.fillStyle= idx===curWep? gb : (owned[idx]? g : gd); ctx.fillText(n===7?"7":n, X, Y); }
     ctx.textBaseline="alphabetic"; }
 
   // 4) FACE — the DOOM portrait, expression by health/pain/firing
@@ -392,10 +407,17 @@ function drawWeaponModel(idx, bx, by, g){
     ctx.lineTo(bx+30,by-100); ctx.lineTo(bx+30,by); ctx.moveTo(bx-30,by-40); ctx.lineTo(bx+30,by-40);
     ctx.moveTo(bx,by-124); ctx.lineTo(bx,by-138);
     tip={mx:bx, my:by-124};
-  } else { // PLASMA — coil emitter
+  } else if(idx===5){ // PLASMA — coil emitter
     ctx.moveTo(bx-24,by); ctx.lineTo(bx-24,by-92); ctx.lineTo(bx+24,by-92); ctx.lineTo(bx+24,by);
     for(let y=by-98;y>by-126;y-=8){ ctx.moveTo(bx-16,y); ctx.lineTo(bx+16,y); }
     tip={mx:bx, my:by-126};
+  } else { // BFG-9000 — big boxy emitter with prongs + core
+    ctx.moveTo(bx-40,by); ctx.lineTo(bx-40,by-86); ctx.lineTo(bx-20,by-110); ctx.lineTo(bx+20,by-110);
+    ctx.lineTo(bx+40,by-86); ctx.lineTo(bx+40,by); ctx.moveTo(bx-40,by-40); ctx.lineTo(bx+40,by-40);
+    ctx.moveTo(bx-20,by-110); ctx.lineTo(bx-28,by-134); ctx.moveTo(bx+20,by-110); ctx.lineTo(bx+28,by-134);
+    ctx.moveTo(bx,by-110); ctx.lineTo(bx,by-128);
+    ctx.moveTo(bx+13,by-68); ctx.arc(bx,by-68,13,0,7);
+    tip={mx:bx, my:by-110};
   }
   ctx.stroke();
   return tip;
@@ -558,7 +580,7 @@ function hitscan(w){
 function firePlayerProj(w){
   const fx=Math.sin(cam.yaw), fz=Math.cos(cam.yaw);
   pshots.push({x:cam.x+fx*0.6, y:1.2, z:cam.z+fz*0.6, vx:fx*w.pspd, vz:fz*w.pspd,
-    dmg:w.dmg, splash:w.splash||0, col:w.col||"#8fd4ff", life:3.2});
+    dmg:w.dmg, splash:w.splash||0, col:w.col||"#8fd4ff", big:!!w.big, life:3.2});
 }
 function killEnemy(e){ const i=enemies.indexOf(e); if(i<0)return; enemies.splice(i,1); kills++;
   beep(120,0.25,"sawtooth",0.06,40); noise(0.2,0.1);
