@@ -150,9 +150,7 @@ function drawDemon(e){
 
 // ---- render ----
 function render(){
-  ctx.clearRect(0,0,W,H);
-  // sky gradient hint + ground
-  ctx.fillStyle="#020604"; ctx.fillRect(0,0,W,H);
+  ctx.fillStyle="#020604"; ctx.fillRect(0,0,W,H); // opaque fill doubles as clear (1 pass, not 2)
 
   // distant mountains (parallax by yaw)
   ctx.beginPath(); ctx.strokeStyle="#1f6f3f"; ctx.lineWidth=1.2;
@@ -250,6 +248,10 @@ function drawHUD(){
   const rr=54, rx=W-rr-22, ry=H-rr-22;
   ctx.beginPath(); ctx.strokeStyle=g; ctx.lineWidth=1.2; ctx.arc(rx,ry,rr,0,7); ctx.stroke();
   ctx.beginPath(); ctx.moveTo(rx,ry-6); ctx.lineTo(rx,ry+6); ctx.moveTo(rx-6,ry); ctx.lineTo(rx+6,ry); ctx.stroke();
+  // rotating sweep — always animates (even standing/at title), so it's obvious the loop is live
+  const sw=(last/900)%(Math.PI*2);
+  ctx.beginPath(); ctx.strokeStyle="rgba(95,255,159,.5)"; ctx.lineWidth=1;
+  ctx.moveTo(rx,ry); ctx.lineTo(rx+Math.sin(sw)*rr, ry-Math.cos(sw)*rr); ctx.stroke();
   const cy=Math.cos(-cam.yaw), sy=Math.sin(-cam.yaw);
   for(const e of enemies){ const dx=e.x-cam.x, dz=e.z-cam.z;
     let lx=dx*cy - dz*sy, lz=dx*sy + dz*cy; const d=Math.hypot(lx,lz)/ARENA*rr;
@@ -347,7 +349,7 @@ function frame(now){ requestAnimationFrame(frame); // schedule first so a draw e
   if(toastT>0 && state==="play"){ toastT-=dt; ctx.save(); ctx.globalAlpha=Math.min(1,toastT);
     ctx.fillStyle="#5fff9f"; ctx.font="bold 40px 'Courier New',monospace"; ctx.textAlign="center";
     ctx.fillText(toastMsg, W/2, H*0.3); ctx.restore(); }
-  requestAnimationFrame(frame); }
+}
 requestAnimationFrame(frame);
 </script>
 </body>
