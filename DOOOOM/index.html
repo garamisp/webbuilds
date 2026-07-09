@@ -27,7 +27,7 @@
 "use strict";
 const cv = document.getElementById("c"), ctx = cv.getContext("2d");
 const ui = document.getElementById("ui"), panel = document.getElementById("panel");
-let W = 0, H = 0, F = 0, DPR = Math.min(2, window.devicePixelRatio || 1);
+let W = 0, H = 0, F = 0, DPR = 1; // DPR 1 = far fewer pixels to fill (perf)
 function resize(){
   W = window.innerWidth; H = window.innerHeight;
   cv.width = W * DPR; cv.height = H * DPR;
@@ -151,7 +151,6 @@ function render(){
   ctx.clearRect(0,0,W,H);
   // sky gradient hint + ground
   ctx.fillStyle="#020604"; ctx.fillRect(0,0,W,H);
-  ctx.shadowColor="#2fae5f"; ctx.shadowBlur=6;
 
   // distant mountains (parallax by yaw)
   ctx.beginPath(); ctx.strokeStyle="#1f6f3f"; ctx.lineWidth=1.2;
@@ -213,7 +212,7 @@ function render(){
 function drawHUD(){
   const g="#3fbf6f";
   // player weapon: two vector barrels rising from bottom
-  ctx.strokeStyle=g; ctx.lineWidth=2; ctx.shadowColor=g; ctx.shadowBlur=6;
+  ctx.strokeStyle=g; ctx.lineWidth=2;
   ctx.beginPath();
   const bx=W/2, by=H;
   ctx.moveTo(bx-70,by); ctx.lineTo(bx-26,by-120); ctx.lineTo(bx-14,by-120); ctx.lineTo(bx-46,by);
@@ -342,7 +341,7 @@ function frame(now){ requestAnimationFrame(frame); // schedule first so a draw e
   update(dt); render();
   if(toastT>0 && state==="play"){ toastT-=dt; ctx.save(); ctx.globalAlpha=Math.min(1,toastT);
     ctx.fillStyle="#5fff9f"; ctx.font="bold 40px 'Courier New',monospace"; ctx.textAlign="center";
-    ctx.shadowColor="#2fae5f"; ctx.shadowBlur=12; ctx.fillText(toastMsg, W/2, H*0.3); ctx.restore(); }
+    ctx.fillText(toastMsg, W/2, H*0.3); ctx.restore(); }
   requestAnimationFrame(frame); }
 requestAnimationFrame(frame);
 </script>
