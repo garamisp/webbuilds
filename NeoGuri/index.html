@@ -1,0 +1,727 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>NEO-GURI // 네오-구리</title>
+<style>
+  html,body{margin:0;height:100%;background:#05010e;overflow:hidden;
+    font-family:"Courier New",monospace;color:#37e6ff;-webkit-user-select:none;user-select:none;
+    touch-action:none;-webkit-tap-highlight-color:transparent}
+  /* stage that letterboxes the fixed-res canvas */
+  #stage{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#05010e}
+  #c{display:block;image-rendering:pixelated;background:#07021a;
+     box-shadow:0 0 40px rgba(55,230,255,.15),0 0 120px rgba(255,54,198,.08)}
+  /* CRT scanlines + vignette overlay (cheap, CSS-only) */
+  #crt{position:fixed;inset:0;pointer-events:none;z-index:5;mix-blend-mode:overlay;
+     background:repeating-linear-gradient(0deg,rgba(0,0,0,.0) 0px,rgba(0,0,0,.0) 2px,rgba(0,0,0,.35) 3px)}
+  #vig{position:fixed;inset:0;pointer-events:none;z-index:6;
+     background:radial-gradient(ellipse at center,rgba(0,0,0,0) 55%,rgba(0,0,0,.55) 100%)}
+  /* menu overlay */
+  #ui{position:fixed;inset:0;z-index:10;display:none;align-items:center;justify-content:center;
+     text-align:center;background:rgba(5,1,14,.72);backdrop-filter:blur(2px)}
+  #ui.on{display:flex}
+  #panel{max-width:560px;padding:24px}
+  h1{font-size:min(18vw,110px);margin:0;letter-spacing:.04em;color:#8ff6ff;line-height:.95;
+     text-shadow:0 0 10px #37e6ff,0 0 30px #1c9bd6,0 0 60px #ff36c6}
+  .neo{color:#ff8fe6;text-shadow:0 0 10px #ff36c6,0 0 34px #b01f8a}
+  .sub{color:#8ff6ff;opacity:.85;margin:.5em 0 .2em;font-size:min(4.6vw,20px);letter-spacing:.25em}
+  .kr{color:#ffd13d;opacity:.9;margin:.1em 0 1.3em;font-size:min(4vw,17px);letter-spacing:.06em}
+  .hint{opacity:.8;font-size:min(3.5vw,14px);line-height:1.9;color:#9ff}
+  .k{color:#ff8fe6;font-weight:bold}
+  .big{font-size:min(11vw,64px);margin:.05em;color:#ff6f6f;text-shadow:0 0 14px #b03030,0 0 40px #802020}
+  .win{color:#8dff6f;text-shadow:0 0 14px #39ff14,0 0 40px #1f8a10}
+  .blink{animation:b 1.05s steps(2) infinite}@keyframes b{50%{opacity:.2}}
+  .score{color:#ffd13d;font-size:min(6vw,30px);margin:.4em 0}
+  /* touch controls */
+  #touch{position:fixed;inset:0;z-index:8;display:none;pointer-events:none}
+  body.touch #touch{display:block}
+  .pad{position:absolute;bottom:22px;pointer-events:auto;display:flex;gap:14px;align-items:center}
+  #padL{left:20px}
+  #padR{right:20px}
+  .btn{width:64px;height:64px;border-radius:14px;border:2px solid rgba(55,230,255,.5);
+     background:rgba(55,230,255,.08);color:#8ff6ff;font-size:26px;display:flex;align-items:center;
+     justify-content:center;box-shadow:0 0 12px rgba(55,230,255,.2) inset}
+  .btn:active,.btn.dn{background:rgba(255,54,198,.22);border-color:#ff36c6;color:#fff}
+  #bJump{width:88px;height:88px;border-radius:50%;border-color:rgba(255,54,198,.6);
+     background:rgba(255,54,198,.12);color:#ff8fe6;font-size:15px;letter-spacing:.06em}
+  .col{display:flex;flex-direction:column;gap:10px}
+</style>
+</head>
+<body>
+<div id="stage"><canvas id="c" width="800" height="600"></canvas></div>
+<div id="crt"></div>
+<div id="vig"></div>
+
+<div id="ui" class="on"><div id="panel"></div></div>
+
+<div id="touch">
+  <div id="padL" class="pad">
+    <div class="btn" data-k="left">◄</div>
+    <div class="btn" data-k="right">►</div>
+  </div>
+  <div id="padR" class="pad">
+    <div class="col"><div class="btn" data-k="up">▲</div><div class="btn" data-k="down">▼</div></div>
+    <div class="btn" id="bJump" data-k="jump">JUMP</div>
+  </div>
+</div>
+
+<script>
+"use strict";
+/* =====================================================================
+   NEO-GURI // 네오-구리  — cyberpunk take on the classic 너구리 (Ponpoko)
+   Single-file HTML5 canvas game. Fixed 800x600 logical resolution,
+   CSS-letterboxed. Neon glow via double-stroke (never shadowBlur in loops).
+   ===================================================================== */
+
+const cv = document.getElementById("c"), ctx = cv.getContext("2d");
+const ui = document.getElementById("ui"), panel = document.getElementById("panel");
+const LW = 800, LH = 600;                 // logical resolution (backing buffer, DPR=1)
+
+// letterbox: scale the fixed-res canvas to fit the window, preserve aspect
+function resize(){
+  const s = Math.min(window.innerWidth / LW, window.innerHeight / LH);
+  cv.style.width  = Math.round(LW * s) + "px";
+  cv.style.height = Math.round(LH * s) + "px";
+}
+addEventListener("resize", resize); resize();
+
+/* ---------------- color helpers (neon) ---------------- */
+const CY="#37e6ff", MG="#ff36c6", YL="#ffd13d", GN="#8dff6f", OR="#ff8a3d", RD="#ff5a5a", PL="#b98bff";
+function rgba(hex,a){ const n=parseInt(hex.slice(1),16); return `rgba(${(n>>16)&255},${(n>>8)&255},${n&255},${a})`; }
+// build a path via fn(), then stroke it twice: wide faint underlay + bright thin top
+function glow(fn, color, wo, wi){
+  ctx.beginPath(); fn();
+  ctx.lineJoin="round"; ctx.lineCap="round";
+  ctx.strokeStyle = rgba(color,.22); ctx.lineWidth = wo; ctx.stroke();
+  ctx.strokeStyle = color;           ctx.lineWidth = wi; ctx.stroke();
+}
+function glowFill(fn, color, fillA, wi){
+  ctx.beginPath(); fn();
+  ctx.fillStyle = rgba(color, fillA); ctx.fill();
+  ctx.strokeStyle = color; ctx.lineWidth = wi; ctx.lineJoin="round"; ctx.stroke();
+}
+
+/* ---------------- tiny synth audio ---------------- */
+let AC=null, muted=false, bgmGain=null;
+function ac(){ if(!AC){ try{ AC = new (window.AudioContext||window.webkitAudioContext)(); }catch(e){} }
+  if(AC && !bgmGain){ bgmGain=AC.createGain(); bgmGain.gain.value=0.5; bgmGain.connect(AC.destination); }
+  return AC; }
+function beep(freq,dur,type,vol,slideTo){
+  if(muted) return; const a=ac(); if(!a) return;
+  try{ const o=a.createOscillator(), g=a.createGain(), t=a.currentTime;
+    o.type=type||"square"; o.frequency.setValueAtTime(freq,t);
+    if(slideTo) o.frequency.exponentialRampToValueAtTime(Math.max(1,slideTo), t+dur);
+    g.gain.setValueAtTime(vol||.05,t); g.gain.exponentialRampToValueAtTime(.0001,t+dur);
+    o.connect(g); g.connect(a.destination); o.start(t); o.stop(t+dur);
+  }catch(e){}
+}
+function noise(dur,vol){
+  if(muted) return; const a=ac(); if(!a) return;
+  try{ const n=Math.floor(a.sampleRate*dur), buf=a.createBuffer(1,n,a.sampleRate), d=buf.getChannelData(0);
+    for(let i=0;i<n;i++) d[i]=(Math.random()*2-1)*(1-i/n);
+    const s=a.createBufferSource(), g=a.createGain(); s.buffer=buf; g.gain.value=vol||.1;
+    s.connect(g); g.connect(a.destination); s.start();
+  }catch(e){}
+}
+const SFX = {
+  collect(i){ beep(600+((i%6)*90),0.09,"square",0.05,1100); },
+  jump(){ beep(300,0.16,"square",0.05,720); },
+  hit(){ noise(0.35,0.16); beep(220,0.4,"sawtooth",0.08,50); },
+  clear(){ [523,659,784,1046].forEach((f,i)=>setTimeout(()=>beep(f,0.16,"square",0.06),i*110)); },
+  emerge(){ beep(140,0.18,"sawtooth",0.05,300); },
+  start(){ [392,523,659].forEach((f,i)=>setTimeout(()=>beep(f,0.12,"square",0.06),i*90)); },
+};
+
+/* ---------------- 8-bit chiptune BGM (looping, gesture-started) ---------------- */
+// A bouncy 2-bar loop over Am–F–C–G. Scheduled off the audio clock (rAF-independent).
+const BGM = {
+  on:false, step:0, next:0, timer:null, bpm:140,
+  chords:[45,41,48,43],                          // Am F C G roots (8 sixteenths each)
+  lead:[ 69,0,76,0, 72,0,76,0,   77,0,72,0, 69,0,65,0,
+         72,0,79,0, 76,0,72,0,   74,0,71,0, 67,0,74,76 ],
+};
+function midi(m){ return 440*Math.pow(2,(m-69)/12); }
+function bgmOsc(freq,t,dur,type,vol){
+  const o=AC.createOscillator(), g=AC.createGain();
+  o.type=type; o.frequency.setValueAtTime(freq,t);
+  g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(vol,t+0.012);
+  g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+  o.connect(g); g.connect(bgmGain); o.start(t); o.stop(t+dur+0.03);
+}
+function bgmHat(t,vol){
+  const n=Math.floor(AC.sampleRate*0.03), b=AC.createBuffer(1,n,AC.sampleRate), d=b.getChannelData(0);
+  for(let i=0;i<n;i++) d[i]=(Math.random()*2-1)*(1-i/n);
+  const s=AC.createBufferSource(), g=AC.createGain(); s.buffer=b; g.gain.value=vol;
+  s.connect(g); g.connect(bgmGain); s.start(t);
+}
+function bgmStep(s,t){
+  const spb=60/BGM.bpm/4;
+  const L=BGM.lead[s]; if(L>0) bgmOsc(midi(L), t, spb*1.7, "square", 0.05);
+  const root=BGM.chords[Math.floor(s/8)], m=s%8;
+  if(m===0||m===2||m===6) bgmOsc(midi(root), t, spb*1.5, "triangle", 0.09);
+  else if(m===4)          bgmOsc(midi(root+7), t, spb*1.5, "triangle", 0.07);
+  if(s%2===0) bgmHat(t, m===0?0.03:0.014);       // hats: accent the downbeat
+}
+function bgmTick(){
+  if(!AC || !BGM.on) return;
+  const spb=60/BGM.bpm/4;
+  if(BGM.next < AC.currentTime) BGM.next = AC.currentTime + 0.05;   // resync after tab-throttle/unmute
+  const ahead = AC.currentTime + 0.14;
+  while(BGM.next < ahead){ if(!muted) bgmStep(BGM.step, BGM.next); BGM.next += spb; BGM.step=(BGM.step+1)%32; }
+}
+function startBGM(){
+  if(!ac()) return;
+  BGM.on=true; BGM.step=0; BGM.next=AC.currentTime+0.1;
+  if(!BGM.timer) BGM.timer=setInterval(bgmTick, 25);
+}
+
+/* ---------------- input ---------------- */
+const IN = {left:false,right:false,up:false,down:false,jump:false};
+let jumpEdge=false;                        // consumed once per press
+addEventListener("keydown",e=>{
+  const c=e.code;
+  if(["ArrowLeft","ArrowRight","ArrowUp","ArrowDown","Space"].includes(c)) e.preventDefault();
+  if(c==="ArrowLeft"||c==="KeyA") IN.left=true;
+  if(c==="ArrowRight"||c==="KeyD") IN.right=true;
+  if(c==="ArrowUp"||c==="KeyW") IN.up=true;
+  if(c==="ArrowDown"||c==="KeyS") IN.down=true;
+  if(c==="Space"||c==="KeyZ"||c==="KeyK"){ if(!IN.jump) jumpEdge=true; IN.jump=true; }
+  if(c==="KeyM"){ muted=!muted; if(bgmGain) bgmGain.gain.value = muted?0:0.5; }
+  if(c==="Enter"){ if(G.state!=="play") startGame(); }
+});
+addEventListener("keyup",e=>{
+  const c=e.code;
+  if(c==="ArrowLeft"||c==="KeyA") IN.left=false;
+  if(c==="ArrowRight"||c==="KeyD") IN.right=false;
+  if(c==="ArrowUp"||c==="KeyW") IN.up=false;
+  if(c==="ArrowDown"||c==="KeyS") IN.down=false;
+  if(c==="Space"||c==="KeyZ"||c==="KeyK") IN.jump=false;
+});
+// touch controls
+function bindTouch(){
+  document.body.classList.add("touch");
+  document.querySelectorAll("#touch .btn").forEach(el=>{
+    const k=el.dataset.k;
+    const on =e=>{ e.preventDefault(); el.classList.add("dn"); if(k==="jump"){ if(!IN.jump) jumpEdge=true; } IN[k]=true; };
+    const off=e=>{ e.preventDefault(); el.classList.remove("dn"); IN[k]=false; };
+    el.addEventListener("touchstart",on,{passive:false});
+    el.addEventListener("touchend",off,{passive:false});
+    el.addEventListener("touchcancel",off,{passive:false});
+  });
+}
+addEventListener("touchstart",function once(){ bindTouch(); if(G.state!=="play") startGame(); removeEventListener("touchstart",once); },{passive:true});
+cv.addEventListener("pointerdown",()=>{ if(G.state!=="play") startGame(); });
+ui.addEventListener("pointerdown",()=>{ if(G.state!=="play") startGame(); });
+
+/* =====================================================================
+   LEVEL MODEL
+   Floors are horizontal platforms (index 0 = top). Each floor has one or
+   more solid spans [x1,x2]; the complement is a gap you can fall through.
+   Ladders connect a span to the floor above it (guaranteeing reachability).
+   ===================================================================== */
+const N=5;                                 // number of floors
+const PX0=52, PX1=748;                      // playfield left/right
+const FY=[150,250,350,450,550];             // floor surface Y per floor
+const FRUIT_TYPES=[CY,MG,YL,GN,OR,PL];
+
+let floors=[], ladders=[], fruits=[], holes=[];
+
+function solid(f,x){ if(f<0||f>=N) return false; return floors[f].some(s=>x>=s[0]&&x<=s[1]); }
+
+function ri(a,b){ return a + Math.floor(Math.random()*(b-a+1)); }
+function rf(a,b){ return a + Math.random()*(b-a); }
+
+function generateLevel(stage){
+  for(let tries=0; tries<40; tries++){
+    floors=[]; ladders=[]; fruits=[]; holes=[];
+    // --- spans: top & bottom floors are full (hub + no fall-off); middle may have 1 gap
+    const maxGaps = Math.min(3, 1 + Math.floor(stage/2));
+    let gapsMade=0;
+    for(let f=0; f<N; f++){
+      if(f===0 || f===N-1){ floors.push([[PX0,PX1]]); continue; }
+      if(gapsMade<maxGaps && Math.random()<0.72){
+        const gw=ri(78,120), gc=ri(PX0+150, PX1-150);
+        const s=[[PX0,gc-gw/2],[gc+gw/2,PX1]];
+        if(s[0][1]-s[0][0]>=95 && s[1][1]-s[1][0]>=95){ floors.push(s); gapsMade++; holes.push({f,x:gc,gap:true}); continue; }
+      }
+      floors.push([[PX0,PX1]]);
+    }
+    // --- ladders: every span links UP to the floor above at an x solid on both
+    let ok=true;
+    for(let f=1; f<N && ok; f++){
+      for(const s of floors[f]){
+        const cands=[];
+        for(let x=Math.ceil(s[0])+18; x<=s[1]-18; x+=6) if(solid(f-1,x)) cands.push(x);
+        if(!cands.length){ ok=false; break; }
+        const x=cands[ri(0,cands.length-1)];
+        ladders.push({x, upper:f-1, lower:f, topY:FY[f-1], botY:FY[f]});
+      }
+    }
+    if(!ok) continue;
+    // extra ladders for route variety (more in later stages)
+    const extra = Math.min(4, 1+Math.floor(stage/2));
+    for(let e=0; e<extra; e++){
+      const f=ri(1,N-1);
+      const xs=[];
+      for(let x=PX0+30; x<=PX1-30; x+=6) if(solid(f,x)&&solid(f-1,x)) xs.push(x);
+      if(xs.length){ const x=xs[ri(0,xs.length-1)];
+        if(!ladders.some(l=>l.lower===f&&Math.abs(l.x-x)<44)) ladders.push({x,upper:f-1,lower:f,topY:FY[f-1],botY:FY[f]}); }
+    }
+    // --- fruits: spread along every span, skipping ladder columns
+    let fid=0;
+    for(let f=0; f<N; f++){
+      for(const s of floors[f]){
+        for(let x=s[0]+46; x<=s[1]-30; x+=94){
+          if(ladders.some(l=>Math.abs(l.x-x)<20 && (l.upper===f||l.lower===f))) continue;
+          if(f===N-1 && Math.abs(x-(PX0+60))<52) continue;   // keep player's start tile clear
+
+          fruits.push({x, f, y:FY[f]-15, type:FRUIT_TYPES[fid%FRUIT_TYPES.length], got:false, rot:rf(0,6.28)});
+          fid++;
+        }
+      }
+    }
+    if(fruits.length<8) continue;     // regenerate sparse levels
+    // snake spawn holes: one guaranteed per floor (1..N-1) so spawns SPREAD across
+    // floors instead of piling onto one line, then a few extras for variety.
+    for(let f=1; f<N; f++){
+      for(let tr=0; tr<40; tr++){ const x=ri(PX0+50,PX1-50);
+        if(solid(f,x) && !holes.some(h=>h.f===f&&Math.abs(h.x-x)<80)){ holes.push({f,x,gap:false}); break; } }
+    }
+    let extraH=Math.min(1+Math.floor(stage/2),3), hguard=0;
+    while(extraH>0 && hguard++<200){ const f=ri(1,N-1), x=ri(PX0+50,PX1-50);
+      if(solid(f,x) && !holes.some(h=>h.f===f&&Math.abs(h.x-x)<80)){ holes.push({f,x,gap:false}); extraH--; } }
+    return;
+  }
+  // ultra-safe fallback: flat floors, one ladder chain, fruits
+  floors=[]; ladders=[]; fruits=[]; holes=[];
+  for(let f=0;f<N;f++) floors.push([[PX0,PX1]]);
+  for(let f=1;f<N;f++) ladders.push({x:PX0+80+(f%2)*400,upper:f-1,lower:f,topY:FY[f-1],botY:FY[f]});
+  let fid=0;
+  for(let f=0;f<N;f++) for(let x=PX0+60;x<=PX1-40;x+=110){ fruits.push({x,f,y:FY[f]-15,type:FRUIT_TYPES[fid%6],got:false,rot:0}); fid++; }
+  for(let i=0;i<4;i++) holes.push({f:ri(1,N-1),x:ri(PX0+60,PX1-60),gap:false});
+}
+
+/* =====================================================================
+   GAME STATE
+   ===================================================================== */
+const G = {
+  state:"title",            // title | play | clear | over
+  stage:1, score:0,
+  hi: +(localStorage.getItem("neoguri_hi")||0),
+  lives:3, invuln:0, over:0, clearT:0, shake:0,
+};
+const P = { x:PX0+60, y:FY[N-1], floor:N-1, state:"walk", vy:0, vx:0, face:1, ladder:null, anim:0 };
+let snakes=[], spawnT=0;
+
+function stageCfg(){
+  const st=G.stage;
+  return {
+    cap: Math.min(1+st, 5),            // total snakes at once (was up to 8 — too many)
+    maxPerFloor: st>=4 ? 2 : 1,        // KEY: never crowd one line into an un-passable wall
+    interval: Math.max(1.1, 2.8 - st*0.13),
+    spd: Math.min(50 + st*6, 118),
+    climbers: st>=3,
+  };
+}
+
+function resetPlayer(){
+  P.x=PX0+60; P.y=FY[N-1]; P.floor=N-1; P.state="walk"; P.vy=0; P.vx=0; P.face=1; P.ladder=null; P.anim=0;
+}
+function startStage(){
+  generateLevel(G.stage);
+  resetPlayer();
+  snakes=[]; spawnT=stageCfg().interval*0.6;
+  G.invuln=1.2;
+}
+function startGame(){
+  if(G.state==="play") return;
+  ac(); SFX.start(); startBGM();
+  G.stage=1; G.score=0; G.lives=3;
+  G.state="play"; hideUI();
+  startStage();
+}
+function playerHit(){
+  if(G.invuln>0) return;
+  SFX.hit(); G.shake=0.5; G.lives--;
+  if(G.lives<=0){ G.state="over"; G.over=0;
+    if(G.score>G.hi){ G.hi=G.score; localStorage.setItem("neoguri_hi",G.hi); }
+    return;
+  }
+  resetPlayer(); snakes=[]; spawnT=stageCfg().interval*0.8; G.invuln=2.0;
+}
+function stageClear(){
+  SFX.clear(); G.state="clear"; G.clearT=0;
+  G.score += 1000 + G.lives*250;
+  if(G.score>G.hi){ G.hi=G.score; localStorage.setItem("neoguri_hi",G.hi); }
+}
+
+/* ---------------- overlays ---------------- */
+function showUI(html){ panel.innerHTML=html; ui.classList.add("on"); }
+function hideUI(){ ui.classList.remove("on"); }
+function titleScreen(){
+  showUI(`<h1>NEO<span class="neo">-GURI</span></h1>
+    <div class="sub">CYBER&nbsp;TANUKI</div>
+    <div class="kr">네오-구리 // 사이버펑크 너구리</div>
+    <div class="hint">
+      <span class="k">← →</span> 이동 &nbsp; <span class="k">↑ ↓</span> 사다리<br>
+      <span class="k">SPACE</span> 점프 — 달리며=롱점프 · 멈춰서=숏점프<br>
+      모든 <b style="color:#ffd13d">네온 과일</b>을 먹고 스테이지 클리어!<br>
+      땅에서 솟는 <b style="color:#ff5a5a">사이버 뱀</b>을 피해라. &nbsp;<span style="opacity:.6">(M: 음소거)</span><br><br>
+      <span class="blink">▶ ENTER / 화면 터치로 시작 ◀</span>
+    </div>`);
+}
+function overScreen(){
+  showUI(`<div class="big">GAME OVER</div>
+    <div class="score">SCORE ${G.score}　HI ${G.hi}</div>
+    <div class="kr">STAGE ${G.stage}까지 도달</div>
+    <div class="hint blink">▶ ENTER / 터치로 다시 시작 ◀</div>`);
+}
+
+/* =====================================================================
+   UPDATE
+   ===================================================================== */
+// Faithful Ponpoko jump: two FIXED profiles decided at takeoff, no mid-air steering.
+//  - moving at takeoff  -> LONG jump: fixed arc forward (clears gaps, hops enemies)
+//  - standing at takeoff -> SHORT jump: quick low vertical hop (fast recovery, dodge in place)
+const WALK=132, CLIMB=112, GRAV=1650;
+const SHORT_VY=-360, LONG_VY=-455, LONG_VX=210;
+
+function nearLadder(cond){
+  for(const l of ladders) if(cond(l) && Math.abs(P.x-l.x)<15) return l;
+  return null;
+}
+
+function update(dt){
+  if(G.shake>0) G.shake=Math.max(0,G.shake-dt*1.6);
+  if(G.invuln>0) G.invuln-=dt;
+
+  if(G.state==="clear"){ G.clearT+=dt; if(G.clearT>1.8){ G.stage++; G.state="play"; startStage(); } return; }
+  if(G.state==="over"){ G.over+=dt; return; }
+  if(G.state!=="play") return;
+
+  const dir=(IN.right?1:0)-(IN.left?1:0);
+  P.anim += dt;
+
+  // ---- player state machine ----
+  if(P.state==="walk"){
+    if(dir!==0){
+      P.face=dir;
+      P.x = Math.max(PX0+12, Math.min(PX1-12, P.x + dir*WALK*dt));
+      if(!solid(P.floor, P.x)){ P.state="fall"; P.vy=0; P.vx=0; }   // walked over a gap: drop straight
+    }
+    // climb
+    if(IN.up){ const l=nearLadder(l=>l.lower===P.floor); if(l){ P.state="climb"; P.ladder=l; P.x=l.x; P.y=l.botY-1; } }
+    if(IN.down && P.state==="walk"){ const l=nearLadder(l=>l.upper===P.floor); if(l){ P.state="climb"; P.ladder=l; P.x=l.x; P.y=l.topY+1; } }
+    // jump — fixed profile locked at takeoff (no air control)
+    if(jumpEdge && P.state==="walk"){
+      if(dir!==0){ P.face=dir; P.vy=LONG_VY;  P.vx=dir*LONG_VX; }   // running -> long forward arc
+      else       { P.vy=SHORT_VY; P.vx=0; }                        // standing -> quick vertical hop
+      P.state="jump"; SFX.jump();
+    }
+  }
+  else if(P.state==="climb"){
+    const l=P.ladder;
+    if(IN.up)   P.y -= CLIMB*dt;
+    if(IN.down) P.y += CLIMB*dt;
+    P.x=l.x; P.anim+=dt;
+    if(P.y<=l.topY){ P.y=l.topY; P.floor=l.upper; P.state="walk"; P.ladder=null; }
+    else if(P.y>=l.botY){ P.y=l.botY; P.floor=l.lower; P.state="walk"; P.ladder=null; }
+  }
+  else { // jump or fall — trajectory is fixed; horizontal velocity locked at takeoff
+    const prevY=P.y;
+    P.vy += GRAV*dt; P.y += P.vy*dt;
+    if(P.vx!==0){ P.x=Math.max(PX0+12,Math.min(PX1-12,P.x+P.vx*dt)); if(P.x<=PX0+12||P.x>=PX1-12) P.vx=0; }
+    if(P.vy>0){
+      for(let i=0;i<N;i++){
+        if(prevY<=FY[i] && P.y>=FY[i] && solid(i,P.x)){ P.y=FY[i]; P.floor=i; P.state="walk"; P.vy=0; P.vx=0; break; }
+      }
+    }
+    if(P.state!=="walk" && P.y>FY[N-1]){ P.y=FY[N-1]; P.floor=N-1; P.state="walk"; P.vy=0; P.vx=0; } // safety net
+  }
+  jumpEdge=false;
+
+  // ---- fruit collection ----
+  for(const fr of fruits){
+    if(fr.got) continue;
+    fr.rot += dt*2;
+    if(Math.abs(P.x-fr.x)<16 && Math.abs(P.y-fr.y-3)<26 && (P.floor===fr.f || Math.abs(P.y-fr.y)<20)){
+      fr.got=true; G.score+=100; SFX.collect(fr.type.charCodeAt(1));
+    }
+  }
+  if(fruits.every(f=>f.got)){ stageClear(); return; }
+
+  // ---- snakes ----
+  const cfg=stageCfg();
+  spawnT-=dt;
+  if(spawnT<=0 && snakes.length<cfg.cap){
+    const perFloor = f => snakes.reduce((n,s)=>n+(s.f===f?1:0), 0);
+    // only holes on floors under the per-floor cap...
+    let spots = holes.filter(h=>!h.gap && perFloor(h.f)<cfg.maxPerFloor);
+    let pool = spots.filter(h=>h.f!==P.floor);   // ...prefer floors away from the player
+    if(!pool.length) pool = spots;
+    if(pool.length){
+      // among those, pick a floor that currently has the FEWEST snakes -> spreads them out
+      let min=Infinity; for(const h of pool) min=Math.min(min, perFloor(h.f));
+      const best = pool.filter(h=>perFloor(h.f)===min);
+      const h = best[ri(0,best.length-1)];
+      snakes.push({x:h.x, f:h.f, dir:Math.random()<0.5?-1:1, spd:cfg.spd*rf(0.85,1.15), emerge:0, phase:rf(0,6.28)});
+      SFX.emerge();
+    }
+    spawnT = cfg.interval;
+  }
+  for(const s of snakes){
+    s.phase += dt*6;
+    if(s.emerge<1){ s.emerge=Math.min(1,s.emerge+dt/0.55); continue; }
+    const nx=s.x + s.dir*s.spd*dt;
+    // reverse at wall / span edge / gap ahead
+    if(nx<PX0+12 || nx>PX1-12 || !solid(s.f, nx + s.dir*11)){ s.dir=-s.dir; }
+    else s.x=nx;
+    // higher stages: occasionally take a ladder to hunt other floors (respecting the per-floor cap)
+    if(cfg.climbers && Math.random()<0.004){
+      const l=ladders.find(l=>(l.upper===s.f||l.lower===s.f)&&Math.abs(l.x-s.x)<14);
+      if(l){ const nf=(s.f===l.upper)?l.lower:l.upper;
+        const cnt=snakes.reduce((n,q)=>n+((q!==s&&q.f===nf)?1:0),0);
+        if(cnt<cfg.maxPerFloor){ s.f=nf; s.x=l.x; s.emerge=0.6; } }
+    }
+  }
+
+  // ---- collision: player vs snake ----
+  if(G.invuln<=0){
+    for(const s of snakes){
+      if(s.emerge<1) continue;
+      if(s.f===P.floor && Math.abs(s.x-P.x)<20 && Math.abs(FY[s.f]-P.y)<24){ playerHit(); break; }
+      // also lethal while airborne over a snake on the floor you're crossing
+      if(Math.abs(s.x-P.x)<18 && Math.abs(FY[s.f]-P.y)<20){ playerHit(); break; }
+    }
+  }
+}
+
+/* =====================================================================
+   RENDER
+   ===================================================================== */
+let bgT=0;
+function render(){
+  bgT+=0.016;
+  // camera shake
+  const sh=G.shake>0 ? (Math.random()*2-1)*G.shake*6 : 0;
+  const shy=G.shake>0 ? (Math.random()*2-1)*G.shake*6 : 0;
+
+  // opaque fill doubles as clear
+  ctx.setTransform(1,0,0,1,0,0);
+  ctx.fillStyle="#07021a"; ctx.fillRect(0,0,LW,LH);
+  drawBG();
+
+  ctx.setTransform(1,0,0,1,sh,shy);
+  drawPlatforms();
+  drawLadders();
+  drawHoles();
+  drawFruits();
+  drawSnakes();
+  drawPlayer();
+  ctx.setTransform(1,0,0,1,0,0);
+  drawHUD();
+}
+
+function drawBG(){
+  // faint parallax grid
+  ctx.lineWidth=1; ctx.strokeStyle=rgba(MG,.06);
+  ctx.beginPath();
+  const off=(bgT*10)%40;
+  for(let x=-40+off; x<LW; x+=40){ ctx.moveTo(x,60); ctx.lineTo(x,LH); }
+  ctx.stroke();
+  ctx.strokeStyle=rgba(CY,.05); ctx.beginPath();
+  for(let y=70; y<LH; y+=40){ ctx.moveTo(0,y); ctx.lineTo(LW,y); }
+  ctx.stroke();
+  // distant skyline silhouette
+  ctx.fillStyle=rgba(MG,.05);
+  for(let i=0;i<10;i++){ const bw=50, bx=i*80+ (i%2?10:0); const bh=40+((i*37)%70); ctx.fillRect(bx,LH-bh-2,bw-8,bh); }
+}
+
+function drawPlatforms(){
+  for(let f=0;f<N;f++){
+    for(const s of floors[f]){
+      const y=FY[f];
+      glow(()=>{ ctx.moveTo(s[0],y); ctx.lineTo(s[1],y); }, CY, 7, 2.5);
+      // neon underglow strip
+      ctx.strokeStyle=rgba(CY,.10); ctx.lineWidth=10; ctx.beginPath();
+      ctx.moveTo(s[0],y+6); ctx.lineTo(s[1],y+6); ctx.stroke();
+      // end caps
+      glow(()=>{ ctx.moveTo(s[0],y-6); ctx.lineTo(s[0],y+6); ctx.moveTo(s[1],y-6); ctx.lineTo(s[1],y+6); }, CY,4,1.5);
+    }
+  }
+}
+
+function drawLadders(){
+  for(const l of ladders){
+    const x=l.x, w=13;
+    glow(()=>{ ctx.moveTo(x-w,l.topY-4); ctx.lineTo(x-w,l.botY); ctx.moveTo(x+w,l.topY-4); ctx.lineTo(x+w,l.botY); }, MG, 6, 2);
+    ctx.strokeStyle=rgba(MG,.85); ctx.lineWidth=2; ctx.beginPath();
+    for(let y=l.topY+6; y<l.botY; y+=15){ ctx.moveTo(x-w,y); ctx.lineTo(x+w,y); }
+    ctx.stroke();
+  }
+}
+
+function drawHoles(){
+  for(const h of holes){
+    if(h.gap) continue;
+    const y=FY[h.f];
+    ctx.strokeStyle=rgba(RD,.5); ctx.lineWidth=2;
+    ctx.beginPath(); ctx.ellipse(h.x,y+1,13,4,0,0,6.283); ctx.stroke();
+    ctx.fillStyle=rgba(RD,.12); ctx.beginPath(); ctx.ellipse(h.x,y+1,11,3,0,0,6.283); ctx.fill();
+  }
+}
+
+function drawFruits(){
+  for(const fr of fruits){
+    if(fr.got) continue;
+    const x=fr.x, y=fr.y + Math.sin(bgT*3+fr.rot)*2, c=fr.type;
+    const r=7;
+    ctx.save(); ctx.translate(x,y); ctx.rotate(fr.rot*0.6);
+    glowFill(()=>{ // diamond gem
+      ctx.moveTo(0,-r); ctx.lineTo(r,0); ctx.lineTo(0,r); ctx.lineTo(-r,0); ctx.closePath();
+    }, c, .35, 2);
+    // spark
+    ctx.strokeStyle=rgba("#ffffff",.8); ctx.lineWidth=1.4; ctx.beginPath();
+    ctx.moveTo(-2,-2); ctx.lineTo(2,2); ctx.moveTo(2,-2); ctx.lineTo(-2,2); ctx.stroke();
+    ctx.restore();
+  }
+}
+
+function drawSnakes(){
+  for(const s of snakes){
+    const baseY=FY[s.f];
+    const rise=(1-s.emerge)*26;
+    const a=Math.min(1,s.emerge*1.4);
+    const col = s.emerge<1 ? OR : RD;
+    ctx.save(); ctx.globalAlpha=a;
+    // wavy body, 6 segments trailing behind head
+    const segs=6, headX=s.x, dir=s.dir;
+    glow(()=>{
+      for(let i=0;i<segs;i++){
+        const sx=headX - dir*i*6;
+        const sy=baseY - 6 - Math.sin(s.phase - i*0.7)*4 + rise;
+        if(i===0) ctx.moveTo(sx,sy); else ctx.lineTo(sx,sy);
+      }
+    }, col, 9, 4);
+    // head
+    const hy=baseY-6-Math.sin(s.phase)*4 + rise;
+    glowFill(()=>{ ctx.ellipse(headX+dir*3, hy, 7,6,0,0,6.283); }, col, .5, 2);
+    // eye
+    ctx.fillStyle="#fff"; ctx.beginPath(); ctx.arc(headX+dir*5, hy-2, 1.6,0,6.283); ctx.fill();
+    // forked tongue flick
+    if(Math.sin(s.phase*1.3)>0.6){ ctx.strokeStyle=rgba(YL,.9); ctx.lineWidth=1.4; ctx.beginPath();
+      ctx.moveTo(headX+dir*9,hy); ctx.lineTo(headX+dir*15,hy-2); ctx.moveTo(headX+dir*9,hy); ctx.lineTo(headX+dir*15,hy+2); ctx.stroke(); }
+    ctx.restore();
+  }
+}
+
+/* ---- the cyber tanuki ---- */
+function drawPlayer(){
+  // blink while invulnerable
+  if(G.invuln>0 && Math.floor(G.invuln*12)%2===0) return;
+  const walking = P.state==="walk" && (IN.left||IN.right);
+  const bob = walking ? Math.abs(Math.sin(P.anim*11))*2 : (P.state==="climb"? Math.sin(P.anim*8)*1.5 : 0);
+  const legSwing = walking ? Math.sin(P.anim*11)*4 : 0;
+
+  ctx.save();
+  ctx.translate(P.x, P.y - bob);
+  if(P.face<0) ctx.scale(-1,1);
+
+  // tail (behind, at back = -x)
+  glow(()=>{
+    ctx.moveTo(-9,-8);
+    ctx.quadraticCurveTo(-22,-10,-20,-24);
+    ctx.quadraticCurveTo(-19,-33,-12,-32);
+  }, PL, 8, 3);
+  // tail rings
+  ctx.strokeStyle=rgba(CY,.8); ctx.lineWidth=2; ctx.beginPath();
+  ctx.moveTo(-20,-14); ctx.lineTo(-13,-13); ctx.moveTo(-21,-21); ctx.lineTo(-14,-21); ctx.stroke();
+
+  // legs
+  glow(()=>{ ctx.moveTo(-5,-6); ctx.lineTo(-5-legSwing,0); ctx.moveTo(5,-6); ctx.lineTo(5+legSwing,0); }, CY, 6, 2.5);
+
+  // body (rounded)
+  glowFill(()=>{ roundRect(-11,-30,22,25,9); }, CY, .16, 2.5);
+
+  // cyber chest stripe
+  ctx.strokeStyle=rgba(MG,.9); ctx.lineWidth=2; ctx.beginPath();
+  ctx.moveTo(-7,-13); ctx.lineTo(7,-16); ctx.moveTo(-7,-9); ctx.lineTo(7,-12); ctx.stroke();
+
+  // ears
+  glowFill(()=>{ ctx.moveTo(-10,-29); ctx.lineTo(-13,-40); ctx.lineTo(-3,-31); ctx.closePath(); }, CY,.16,2);
+  glowFill(()=>{ ctx.moveTo(4,-31); ctx.lineTo(11,-41); ctx.lineTo(11,-30); ctx.closePath(); }, CY,.16,2);
+  // ear neon tips
+  ctx.strokeStyle=MG; ctx.lineWidth=2; ctx.beginPath();
+  ctx.moveTo(-13,-40); ctx.lineTo(-11,-37); ctx.moveTo(11,-41); ctx.lineTo(9,-38); ctx.stroke();
+
+  // visor (the cyber "mask" — magenta bar) with cyan eyes
+  glowFill(()=>{ roundRect(-9,-26,18,7,3); }, MG, .35, 2);
+  ctx.fillStyle="#bffcff"; ctx.beginPath();
+  ctx.arc(-3,-22.5,1.7,0,6.283); ctx.arc(4,-22.5,1.7,0,6.283); ctx.fill();
+
+  // snout (forward = +x)
+  glow(()=>{ ctx.moveTo(9,-19); ctx.lineTo(14,-17); ctx.lineTo(9,-15); }, CY, 4, 1.6);
+  ctx.fillStyle=MG; ctx.beginPath(); ctx.arc(14,-17,1.6,0,6.283); ctx.fill();
+
+  ctx.restore();
+}
+function roundRect(x,y,w,h,r){ ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r);
+  ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath(); }
+
+function drawHUD(){
+  ctx.fillStyle=rgba("#05010e",.6); ctx.fillRect(0,0,LW,42);
+  glow(()=>{ ctx.moveTo(0,42); ctx.lineTo(LW,42); }, MG, 4, 1.2);
+  ctx.textBaseline="middle"; ctx.font="bold 18px 'Courier New',monospace";
+  // score
+  ctx.textAlign="left"; ctx.fillStyle=YL; ctx.fillText("SCORE "+String(G.score).padStart(6,"0"), 16, 22);
+  ctx.fillStyle=rgba(CY,.85); ctx.font="14px 'Courier New',monospace";
+  ctx.fillText("HI "+String(G.hi).padStart(6,"0"), 210, 22);
+  // stage
+  ctx.textAlign="center"; ctx.fillStyle=MG; ctx.font="bold 18px 'Courier New',monospace";
+  const total=fruits.length, got=fruits.filter(f=>f.got).length;
+  ctx.fillText("STAGE "+G.stage, LW/2, 14);
+  ctx.fillStyle=rgba(GN,.9); ctx.font="13px 'Courier New',monospace";
+  ctx.fillText("FRUIT "+got+"/"+total, LW/2, 30);
+  // lives (mini raccoon heads)
+  ctx.textAlign="right"; ctx.fillStyle=CY; ctx.font="bold 16px 'Courier New',monospace";
+  for(let i=0;i<G.lives;i++){ miniGuri(LW-24-i*26, 21); }
+  if(muted){ ctx.textAlign="right"; ctx.fillStyle=rgba(RD,.8); ctx.font="12px 'Courier New',monospace"; ctx.fillText("MUTE", LW-8, 54); }
+  // clear banner
+  if(G.state==="clear"){
+    ctx.textAlign="center"; ctx.textBaseline="middle";
+    ctx.fillStyle=rgba("#05010e",.5); ctx.fillRect(0,LH/2-70,LW,140);
+    ctx.fillStyle=GN; ctx.font="bold 54px 'Courier New',monospace";
+    ctx.fillText("STAGE CLEAR", LW/2, LH/2-8);
+    ctx.fillStyle=YL; ctx.font="20px 'Courier New',monospace";
+    ctx.fillText("+"+(1000+G.lives*250)+"  ▶ NEXT", LW/2, LH/2+34);
+  }
+  ctx.textAlign="left"; ctx.textBaseline="alphabetic";  // reset text state
+}
+function miniGuri(x,y){
+  ctx.save(); ctx.translate(x,y); ctx.scale(0.5,0.5);
+  glowFill(()=>{ roundRect(-11,-14,22,20,8); }, CY,.2,3);
+  glowFill(()=>{ ctx.moveTo(-10,-13);ctx.lineTo(-13,-24);ctx.lineTo(-3,-15);ctx.closePath(); },CY,.2,3);
+  glowFill(()=>{ ctx.moveTo(4,-15);ctx.lineTo(11,-25);ctx.lineTo(11,-14);ctx.closePath(); },CY,.2,3);
+  glowFill(()=>{ roundRect(-9,-11,18,7,3); }, MG,.4,3);
+  ctx.fillStyle="#bffcff"; ctx.beginPath(); ctx.arc(-3,-7,2,0,6.283); ctx.arc(4,-7,2,0,6.283); ctx.fill();
+  ctx.restore();
+}
+
+/* =====================================================================
+   MAIN LOOP  (rAF scheduled EXACTLY once per frame — top of frame())
+   ===================================================================== */
+let last=0;
+function frame(t){
+  requestAnimationFrame(frame);                 // (1 of 2)
+  if(!last) last=t;
+  let dt=(t-last)/1000; last=t;
+  dt=Math.max(0, Math.min(0.05, dt));           // clamp BOTH ends (guards NaN)
+  update(dt);
+  render();
+}
+titleScreen();
+requestAnimationFrame(frame);                    // (2 of 2) kickoff
+</script>
+</body>
+</html>
