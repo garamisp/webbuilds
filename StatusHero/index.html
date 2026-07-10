@@ -478,7 +478,9 @@ function update(dt){
   // waves
   const alive=enemies.length;
   if(between){ betweenT-=dt; if(betweenT<=0){ between=false; wave++; spawnQueue=4+wave*2; spawnCd=0;
-      toast("WAVE "+wave); beep(320,0.14,"sawtooth",0.05,190); } }
+      const before=hp; hp=Math.min(100,hp+70); const healed=Math.round(hp-before);   // heal +70 each new wave
+      if(healed>0) beep(740,0.14,"sine",0.05,1320);
+      toast("WAVE "+wave+(healed>0?"   +"+healed+" HP":"")); beep(320,0.14,"sawtooth",0.05,190); } }
   else { spawnCd-=dt; if(spawnQueue>0 && spawnCd<=0 && alive<38){ spawnEnemy(); spawnQueue--; spawnCd=Math.max(0.3,1.1-wave*0.05); }
     if(spawnQueue===0 && alive<=Math.floor(wave/6)){ between=true; betweenT=3; } }
 
