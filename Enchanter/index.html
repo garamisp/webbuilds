@@ -1,0 +1,811 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>마법부여사 이야기 // 장비 강화 시뮬레이터</title>
+<style>
+  :root{
+    --bg:#12101c; --bg2:#1b1830; --panel:#211d38; --panel2:#2a2547;
+    --ink:#e8e3ff; --dim:#9a92c4; --line:#3a3360; --gold:#ffcf5c; --curse:#ff5566;
+    /* rarity */
+    --r0:#9d9d9d; --r1:#f4f2ff; --r2:#3ee65b; --r3:#3aa0ff; --r4:#c05bff; --r5:#ff9020;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:
+      radial-gradient(1200px 700px at 50% -10%, #2a2350 0%, transparent 60%),
+      linear-gradient(180deg,#12101c 0%, #0d0b16 100%);
+    color:var(--ink);font-family:"Segoe UI","Malgun Gothic",system-ui,sans-serif;
+    -webkit-user-select:none;user-select:none;overflow:hidden}
+  #app{position:fixed;inset:0;display:flex;flex-direction:column}
+
+  /* top bar */
+  #top{display:flex;gap:10px;align-items:center;padding:8px 14px;
+    background:linear-gradient(180deg,#241f40,#1a1730);border-bottom:1px solid var(--line);
+    font-size:14px;flex-wrap:wrap}
+  #top .t{display:flex;flex-direction:column;line-height:1.1;padding:2px 12px;border-right:1px solid var(--line)}
+  #top .t:last-child{border-right:none}
+  #top .k{font-size:10px;color:var(--dim);letter-spacing:.08em}
+  #top .v{font-size:17px;font-weight:700}
+  #top .v.gold{color:var(--gold)} #top .v.fame{color:#7fd0ff}
+  #brand{font-weight:800;letter-spacing:.04em;margin-right:auto;font-size:15px;
+    background:linear-gradient(90deg,#ffcf5c,#c05bff);-webkit-background-clip:text;background-clip:text;color:transparent}
+
+  /* main 3-col */
+  #main{flex:1;display:grid;grid-template-columns:270px 1fr 300px;gap:12px;padding:12px;min-height:0}
+  .col{min-height:0;display:flex;flex-direction:column;gap:12px}
+  .card{background:linear-gradient(180deg,var(--panel),#1c1934);border:1px solid var(--line);
+    border-radius:12px;padding:14px;box-shadow:0 8px 24px rgba(0,0,0,.35)}
+  .card h3{margin:0 0 8px;font-size:12px;letter-spacing:.14em;color:var(--dim);font-weight:700;text-transform:uppercase}
+
+  /* hero */
+  #hero .face{font-size:52px;text-align:center;line-height:1;margin:6px 0 4px;
+    filter:drop-shadow(0 4px 8px rgba(0,0,0,.4))}
+  #hero .hname{text-align:center;font-weight:800;font-size:16px}
+  #hero .htemp{text-align:center;font-size:11px;color:var(--dim);margin-bottom:8px}
+  .req{background:#181530;border:1px dashed var(--line);border-radius:8px;padding:8px 10px;font-size:13px;line-height:1.5}
+  .req b{color:var(--gold)}
+  .moodbar{height:10px;border-radius:6px;background:#181530;overflow:hidden;margin-top:8px;border:1px solid var(--line)}
+  .moodbar>div{height:100%;transition:width .4s,background .4s}
+  .mini
+  {display:flex;justify-content:space-between;font-size:12px;color:var(--dim);margin-top:6px}
+  .miniv{color:var(--ink);font-weight:700}
+
+  /* item card (center, the star) */
+  #stage{flex:1;position:relative;display:flex;align-items:stretch;justify-content:center;min-height:0}
+  #itemwrap{position:relative;width:100%;max-width:560px;display:flex;flex-direction:column}
+  #item{flex:1;overflow:auto;background:
+      linear-gradient(180deg,#221d3e,#17142b);
+    border:2px solid var(--line);border-radius:16px;padding:18px 20px;
+    box-shadow:0 12px 40px rgba(0,0,0,.5), inset 0 0 60px rgba(90,60,160,.12);transition:border-color .3s, box-shadow .3s}
+  #item.flash{animation:flash .5s}
+  #item.shake{animation:shake .4s}
+  @keyframes flash{0%{box-shadow:0 0 0 rgba(255,255,255,0)}30%{box-shadow:0 0 60px var(--fx,#fff),inset 0 0 80px var(--fx,#fff)}100%{box-shadow:0 12px 40px rgba(0,0,0,.5)}}
+  @keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-9px)}40%{transform:translateX(8px)}60%{transform:translateX(-6px)}80%{transform:translateX(4px)}}
+  #fxcanvas{position:absolute;inset:0;pointer-events:none;z-index:5}
+
+  .iname{font-size:23px;font-weight:800;line-height:1.25;text-align:center}
+  .iname .pfx{color:var(--gold)}
+  .iepithet{text-align:center;font-size:14px;font-weight:600;margin-top:4px;min-height:18px}
+  .irar{display:inline-block;font-size:11px;font-weight:800;letter-spacing:.1em;padding:2px 10px;border-radius:20px;margin:8px auto 0;
+    border:1px solid currentColor}
+  .rarwrap{text-align:center}
+  .sect{margin-top:14px}
+  .sectlbl{font-size:11px;letter-spacing:.12em;color:var(--dim);text-transform:uppercase;border-bottom:1px solid var(--line);padding-bottom:4px;margin-bottom:6px;display:flex;justify-content:space-between}
+  .grade{font-weight:800}
+  .statline{display:flex;justify-content:space-between;font-size:15px;padding:2px 0}
+  .statline .nm{color:#cfc8f0}
+  .statline .vl{font-weight:700}
+  .pos{color:#7effa1} .neg{color:var(--curse)}
+  .proc{color:var(--gold);font-size:13.5px;line-height:1.5;padding:3px 0}
+  .proc.bad{color:var(--curse)}
+  .empty{color:var(--dim);font-style:italic;font-size:13px}
+  .total .statline .vl{color:#ffe6a0}
+  .appr{display:flex;justify-content:space-around;margin-top:14px;padding-top:10px;border-top:1px dashed var(--line);text-align:center}
+  .appr .k{font-size:10px;color:var(--dim);letter-spacing:.06em}
+  .appr .v{font-size:18px;font-weight:800}
+
+  /* right: actions + log */
+  .btn{display:block;width:100%;border:none;border-radius:10px;padding:12px;font-size:15px;font-weight:800;
+    cursor:pointer;margin-bottom:9px;color:#141020;transition:transform .08s,filter .15s;font-family:inherit}
+  .btn:active{transform:translateY(1px)}
+  .btn:disabled{filter:grayscale(.7) brightness(.6);cursor:not-allowed}
+  .btn small{display:block;font-size:11px;font-weight:600;opacity:.75;margin-top:2px}
+  .btn.enchant{background:linear-gradient(180deg,#b57bff,#7d40e0);color:#fff;box-shadow:0 4px 14px rgba(125,64,224,.5)}
+  .btn.ench-pfx{background:linear-gradient(180deg,#ffd76a,#e0a828);color:#141020;box-shadow:0 4px 12px rgba(224,168,40,.35)}
+  .btn.ench-sfx{background:linear-gradient(180deg,#c98bff,#7d40e0);color:#fff;box-shadow:0 4px 12px rgba(125,64,224,.4)}
+  .btn.finish{background:linear-gradient(180deg,#8fe06a,#4aa838);color:#0e1808}
+  .btn.persuade{background:linear-gradient(180deg,#6fe0ff,#2aa5d8);color:#082430}
+  #log{flex:1;overflow:auto;font-size:12.5px;line-height:1.5;display:flex;flex-direction:column-reverse}
+  #log .e{padding:5px 8px;border-radius:6px;margin-bottom:5px;background:#181530}
+  #log .e.hero{border-left:3px solid #7fd0ff}
+  #log .e.sys{color:var(--dim)}
+  #log .e.good{border-left:3px solid #7effa1}
+  #log .e.bad{border-left:3px solid var(--curse)}
+  #log .e.money{border-left:3px solid var(--gold)}
+  #log .e .who{font-weight:700;color:#7fd0ff}
+
+  /* overlay screens */
+  #overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:50;
+    background:rgba(8,6,16,.82);backdrop-filter:blur(3px);text-align:center;padding:20px}
+  #overlay.hide{display:none}
+  #obox{max-width:560px;background:linear-gradient(180deg,#241f42,#171429);border:1px solid var(--line);
+    border-radius:18px;padding:30px 34px;box-shadow:0 20px 60px rgba(0,0,0,.6)}
+  #obox h1{margin:0 0 6px;font-size:30px;background:linear-gradient(90deg,#ffcf5c,#c05bff);
+    -webkit-background-clip:text;background-clip:text;color:transparent}
+  #obox p{color:var(--dim);line-height:1.7;font-size:14px}
+  #obox .go{margin-top:18px;font-size:17px}
+  .toast{position:fixed;left:50%;top:64px;transform:translateX(-50%);background:#2a2547;border:1px solid var(--line);
+    color:var(--ink);padding:10px 18px;border-radius:10px;z-index:60;font-weight:700;box-shadow:0 8px 24px rgba(0,0,0,.5);
+    opacity:0;transition:opacity .25s,transform .25s;pointer-events:none}
+  .toast.on{opacity:1;transform:translateX(-50%) translateY(4px)}
+
+  .resultgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:16px 0;text-align:left}
+  .resultgrid .rc{background:#181530;border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+  .resultgrid .rc .k{font-size:11px;color:var(--dim)} .resultgrid .rc .v{font-size:20px;font-weight:800}
+
+  #bMute{background:transparent;border:1px solid var(--line);color:var(--ink);font-size:16px;
+    border-radius:8px;padding:4px 8px;cursor:pointer;line-height:1}
+  #bMute:hover{background:var(--panel2)}
+  #mascot{position:fixed;left:12px;bottom:0;width:150px;height:auto;z-index:30;pointer-events:none;
+    filter:drop-shadow(0 6px 16px rgba(0,0,0,.55));animation:bob 4.5s ease-in-out infinite;
+    image-rendering:auto}
+  @keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-9px)}}
+  @media (max-width:900px){
+    #main{grid-template-columns:1fr;grid-template-rows:auto auto auto;overflow:auto}
+    #stage{min-height:380px}
+    #log{max-height:150px}
+    #mascot{display:none}
+  }
+  @media (max-height:620px){ #mascot{display:none} }
+  ::-webkit-scrollbar{width:8px;height:8px}::-webkit-scrollbar-thumb{background:#3a3360;border-radius:8px}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="top">
+    <div id="brand">✦ 마법부여사 이야기</div>
+    <div class="t"><span class="k">골드</span><span class="v gold" id="tGold">0</span></div>
+    <div class="t"><span class="k">명성</span><span class="v fame" id="tFame">0</span></div>
+    <div class="t"><span class="k">등급</span><span class="v" id="tRank" style="font-size:14px">견습</span></div>
+    <div class="t"><span class="k">완료 의뢰</span><span class="v" id="tDone">0</span></div>
+    <button id="bMute" title="소리 켜기/끄기">🔊</button>
+  </div>
+
+  <div id="main">
+    <!-- LEFT: hero + request -->
+    <div class="col">
+      <div class="card" id="hero">
+        <h3>의뢰인</h3>
+        <div class="face" id="hFace">🧝</div>
+        <div class="hname" id="hName">―</div>
+        <div class="htemp" id="hTemp"></div>
+        <div class="req" id="hReq">―</div>
+        <div class="mini"><span>기분</span><span class="miniv" id="hMoodTxt">보통</span></div>
+        <div class="moodbar"><div id="hMoodBar" style="width:55%"></div></div>
+        <div class="mini"><span>남은 기회</span><span class="miniv" id="hTries">-</span></div>
+        <div class="mini"><span>이번 의뢰 지출</span><span class="miniv" id="hSpent">0 G</span></div>
+      </div>
+    </div>
+
+    <!-- CENTER: the item -->
+    <div class="col" id="stage">
+      <div id="itemwrap">
+        <div id="item"><div class="empty" style="text-align:center;margin-top:40px">의뢰를 기다리는 중...</div></div>
+        <canvas id="fxcanvas"></canvas>
+      </div>
+    </div>
+
+    <!-- RIGHT: actions + log -->
+    <div class="col">
+      <div class="card">
+        <h3>작업대</h3>
+        <button class="btn ench-pfx" id="bEnchPfx">✦ 접두사 부여<small id="bEnchPfxSub">비용 -</small></button>
+        <button class="btn ench-sfx" id="bEnchSfx">✦ 접미사 부여<small id="bEnchSfxSub">비용 -</small></button>
+        <button class="btn finish" id="bFinish">✔ 완성하여 넘기기<small id="bFinishSub">예상 보수 -</small></button>
+        <button class="btn persuade" id="bPersuade">💬 설득하기<small id="bPersuadeSub">용사를 구슬려 마무리</small></button>
+      </div>
+      <div class="card" style="flex:1;display:flex;flex-direction:column;min-height:0">
+        <h3>작업 일지</h3>
+        <div id="log"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<img id="mascot" src="Enchanter.png" alt="마법부여사">
+<div id="overlay">
+  <div id="obox">
+    <h1>✦ 마법부여사 이야기 ✦</h1>
+    <p>당신은 변방의 <b>마법부여사</b>. 용사들이 장비를 들고 찾아온다.<br>
+    <b style="color:#ffcf5c">접두사</b>와 <b style="color:#c05bff">접미사</b>를 <b>따로</b> 부여할 수 있다 —<br>
+    마음에 드는 쪽은 두고, <b>아쉬운 쪽만 다시</b> 굴려라.<br><br>
+    부여할 때마다 <b>비용이 오르고</b>, 그 슬롯의 이전 옵션은 <b>사라진다</b>.<br>
+    저주(<span style="color:#ff5566">붉은 옵션</span>)가 붙을 수도, 최저 수치가 나올 수도 있다.<br>
+    용사가 <b>더 하길 원할</b> 때 그냥 넘기면 값을 덜 쳐준다 —<br>
+    <b style="color:#6fe0ff">설득</b>으로 흔쾌히 마무리시키는 것도 실력.<br>
+    <span style="color:#9a92c4">언제 멈추고 넘길 것인가? 그것이 마법부여사의 진짜 실력이다.</span><br><br>
+    명성을 쌓아 언젠가 <b style="color:#ff9020">전설 장비</b>를 부여할 그날까지.</p>
+    <button class="btn enchant go" id="bStart">작업대에 앉기</button>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+/* ===================== 유틸 ===================== */
+const $=id=>document.getElementById(id);
+const ri=(a,b)=>a+Math.floor(Math.random()*(b-a+1));
+const rf=(a,b)=>a+Math.random()*(b-a);
+const rnd=a=>a[(Math.random()*a.length)|0];
+const chance=p=>Math.random()<p;
+const clamp=(x,a,b)=>x<a?a:x>b?b:x;
+const commafy=n=>Math.round(n).toLocaleString('en-US');
+
+/* ===================== 오디오 (초소형 신스 + 8bit BGM) ===================== */
+let AC=null, masterGain=null, bgmGain=null;
+function audioInit(){
+  if(AC)return;
+  AC=new (window.AudioContext||window.webkitAudioContext)();
+  masterGain=AC.createGain(); masterGain.gain.value=1; masterGain.connect(AC.destination);
+  bgmGain=AC.createGain(); bgmGain.gain.value=0.5; bgmGain.connect(masterGain);
+}
+function tone(freq,dur,type,vol,slideTo){
+  try{ audioInit();
+    const o=AC.createOscillator(),g=AC.createGain(),t=AC.currentTime;
+    o.type=type||"triangle";o.frequency.setValueAtTime(freq,t);
+    if(slideTo)o.frequency.exponentialRampToValueAtTime(slideTo,t+dur);
+    g.gain.setValueAtTime(vol||0.05,t);g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+    o.connect(g);g.connect(masterGain);o.start(t);o.stop(t+dur);
+  }catch(e){}
+}
+function chord(freqs,dur,vol){freqs.forEach((f,i)=>setTimeout(()=>tone(f,dur,"triangle",vol||0.05),i*45));}
+
+/* --- 8bit 신비 BGM : 룩어헤드 스케줄러(오디오 클럭 기준, rAF와 무관) --- */
+const midi=m=>440*Math.pow(2,(m-69)/12);
+// 4마디 진행 : Am - F - C - E(V) , 자연단조 + 도미넌트 긴장
+const PROG=[
+  {bass:45, arp:[69,72,76,72]},   // Am : A C E
+  {bass:41, arp:[65,69,72,69]},   // F  : F A C
+  {bass:48, arp:[67,72,76,72]},   // C  : G C E
+  {bass:40, arp:[68,71,76,71]}    // E  : G# B E (긴장)
+];
+const BPM=94, STEPDUR=60/BPM/4;   // 16분음표 길이(초)
+let bgmOn=false, bgmTimer=null, bgmNext=0, bgmStep=0;
+function bgmNote(freq,dur,type,vol,t){
+  const o=AC.createOscillator(),g=AC.createGain();
+  o.type=type;o.frequency.setValueAtTime(freq,t);
+  g.gain.setValueAtTime(0.0001,t);
+  g.gain.exponentialRampToValueAtTime(vol,t+0.012);
+  g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+  o.connect(g);g.connect(bgmGain);o.start(t);o.stop(t+dur+0.03);
+}
+function bgmScheduleStep(t){
+  const bar=Math.floor(bgmStep/16)%PROG.length, s=bgmStep%16, ch=PROG[bar];
+  if(s%8===0) bgmNote(midi(ch.bass), STEPDUR*7.5, "triangle", 0.05, t);        // 베이스(반마디)
+  if(s%2===0) bgmNote(midi(ch.arp[(s/2)%4]), STEPDUR*1.7, "square", 0.026, t); // 아르페지오(8분음표)
+  if(s===0)   bgmNote(midi(ch.arp[2]+12), STEPDUR*4, "sine", 0.018, t);        // 상단 반짝임
+  if(s===12)  bgmNote(midi(ch.arp[1]+12), STEPDUR*2, "sine", 0.014, t);
+  bgmStep++;
+}
+function bgmScheduler(){
+  try{ while(bgmNext < AC.currentTime+0.12){ bgmScheduleStep(bgmNext); bgmNext+=STEPDUR; } }catch(e){}
+}
+function startBGM(){
+  audioInit(); if(bgmOn)return; bgmOn=true;
+  bgmNext=AC.currentTime+0.15; bgmStep=0;
+  bgmTimer=setInterval(bgmScheduler,25);
+}
+let muted=false;
+function toggleMute(){
+  muted=!muted;
+  if(masterGain)masterGain.gain.value=muted?0:1;
+  $("bMute").textContent=muted?"🔇":"🔊";
+}
+
+/* ===================== 스탯 정의 ===================== */
+const SW={ // stat -> gold value per point
+  hp:1.0, mp:0.6, atk:4.2, def:3.2, str:3.0, dex:3.0, int:3.0,
+  crit:8.5, spd:6.0, luk:4.5, fire:3.6, cold:3.6, lght:3.6, pois:3.6, hpreg:5.5
+};
+const SN={ // display name + pct?
+  hp:["체력",0], mp:["마나",0], atk:["공격력",0], def:["방어력",0],
+  str:["힘",0], dex:["민첩",0], int:["지능",0], crit:["치명타",1], spd:["공격속도",1],
+  luk:["행운",0], fire:["화염 피해",0], cold:["냉기 피해",0], lght:["전격 피해",0],
+  pois:["독 피해",0], hpreg:["체력 재생",0]
+};
+const STAT_ORDER=Object.keys(SN);
+
+/* ===================== 아이템 베이스 (희귀도별) ===================== */
+const RAR=["하급","일반","고급","희귀","영웅","전설"];
+const RARCOL=["var(--r0)","var(--r1)","var(--r2)","var(--r3)","var(--r4)","var(--r5)"];
+// base[rarity] = [ [이름, {stat:value,...}], ... ]
+const BASES=[
+  [ ["녹슨 손도끼",{atk:5,def:1}],["삐걱대는 목검",{atk:4}],["구멍난 가죽조끼",{def:4,hp:6}],
+    ["짝짝이 장갑",{def:2,dex:2}],["곰팡이 핀 로브",{mp:8,int:2}],["휘어진 편자검",{atk:6}] ],
+  [ ["무난한 롱소드",{atk:11,str:2}],["성실한 강철검",{atk:13}],["평범한 사슬갑옷",{def:11,hp:14}],
+    ["튼튼한 원형방패",{def:14}],["견습 마법사의 지팡이",{mp:20,int:6}],["사냥꾼의 단궁",{atk:10,dex:5}] ],
+  [ ["장인의 미스릴 검",{atk:24,str:5,crit:2}],["은빛 흉갑",{def:26,hp:30}],["숙련된 사냥꾼의 장궁",{atk:22,dex:10}],
+    ["수정 세공 지팡이",{mp:44,int:14}],["그림자 사슬장갑",{def:15,spd:4,dex:8}] ],
+  [ ["룬이 새겨진 대검",{atk:40,str:10,crit:4}],["그림자 단도",{atk:30,dex:16,crit:5}],
+    ["푸른 용린 갑옷",{def:44,hp:60,cold:10}],["대현자의 첨탑 지팡이",{mp:70,int:26}],["폭풍궁 '질풍'",{atk:36,dex:20,lght:12}] ],
+  [ ["용의 이빨 도끼",{atk:60,str:18,fire:20}],["불멸의 판금갑옷",{def:70,hp:110}],
+    ["폭풍을 부르는 활",{atk:55,dex:28,lght:26}],["혼돈의 마도서",{mp:120,int:40,crit:6}],["처형자의 낫",{atk:66,crit:10,pois:22}] ],
+  [ ["세계를 가르는 검 '여명'",{atk:95,str:30,crit:12}],["고룡의 심장 '이그니스'",{def:110,hp:180,fire:44}],
+    ["천공의 지팡이 '별무리'",{mp:200,int:60,lght:33}],["시간을 꿰는 활 '영겁'",{atk:88,dex:44,crit:14}],
+    ["망자의 왕관 '그림'",{def:80,hp:150,int:44,pois:30}] ]
+];
+
+/* ===================== 접두사 (adjective) : {name, grade, stats} ; 저주는 curse:true, 음수 ===================== */
+// grade 5(허접) ~ 1(전설급)
+const PREFIX=[
+  // g5
+  {n:"희미한 활력의",g:5,s:{hp:[3,8]}},{n:"물빠진",g:5,s:{atk:[1,4]}},{n:"종이짝",g:5,s:{def:[1,3]}},
+  {n:"새싹의",g:5,s:{str:[1,3]}},{n:"굼뜬",g:5,s:{dex:[1,3]}},{n:"멍한",g:5,s:{int:[1,3]}},{n:"깜빡이는",g:5,s:{mp:[2,7]}},
+  // g4
+  {n:"무난한 활력의",g:4,s:{hp:[9,18]}},{n:"성실한",g:4,s:{atk:[4,9]}},{n:"단단한",g:4,s:{def:[4,9]}},
+  {n:"황소 새끼의",g:4,s:{str:[3,7]}},{n:"다람쥐의",g:4,s:{dex:[3,7]}},{n:"학생의",g:4,s:{int:[3,7]}},
+  {n:"찰랑이는",g:4,s:{mp:[8,16]}},{n:"미적지근한",g:4,s:{fire:[4,9]}},
+  // g3
+  {n:"튼튼한 활력의",g:3,s:{hp:[19,34]}},{n:"예리한",g:3,s:{atk:[10,18]}},{n:"견고한",g:3,s:{def:[10,18]}},
+  {n:"황소의",g:3,s:{str:[8,14]}},{n:"표범의",g:3,s:{dex:[8,14]}},{n:"현자의",g:3,s:{int:[8,14]}},
+  {n:"넘실대는",g:3,s:{mp:[17,30]}},{n:"타오르는",g:3,s:{fire:[10,18]}},{n:"서리 내린",g:3,s:{cold:[10,18]}},
+  {n:"치명적인",g:3,s:{crit:[3,7]}},{n:"재빠른",g:3,s:{spd:[4,8]}},{n:"운수좋은",g:3,s:{luk:[4,9]}},
+  // g2
+  {n:"강인한 활력의",g:2,s:{hp:[35,58]}},{n:"무자비한",g:2,s:{atk:[19,30]}},{n:"철벽의",g:2,s:{def:[19,30]}},
+  {n:"거인의",g:2,s:{str:[15,24]}},{n:"질풍의",g:2,s:{dex:[15,24]}},{n:"대현자의",g:2,s:{int:[15,24]}},
+  {n:"마르지 않는",g:2,s:{mp:[31,52]}},{n:"작열하는",g:2,s:{fire:[19,32]}},{n:"혹한의",g:2,s:{cold:[19,32]}},
+  {n:"뇌전의",g:2,s:{lght:[19,32]}},{n:"맹독의",g:2,s:{pois:[19,32]}},{n:"냉혹한",g:2,s:{crit:[8,13]}},
+  {n:"네잎클로버의",g:2,s:{luk:[10,18]}},
+  // g1
+  {n:"불굴의 활력의",g:1,s:{hp:[59,95]}},{n:"학살자의",g:1,s:{atk:[31,50]}},{n:"불괴(不壞)의",g:1,s:{def:[31,50]}},
+  {n:"타이탄의",g:1,s:{str:[25,40]}},{n:"섬광의",g:1,s:{dex:[25,40]}},{n:"오메가 현자의",g:1,s:{int:[25,40]}},
+  {n:"무한의",g:1,s:{mp:[53,88]}},{n:"태양을 삼킨",g:1,s:{fire:[33,55]}},{n:"절대영도의",g:1,s:{cold:[33,55]}},
+  {n:"신벌(神罰)의",g:1,s:{lght:[33,55]}},{n:"역병의 화신인",g:1,s:{pois:[33,55]}},{n:"처형자의",g:1,s:{crit:[14,22]}},
+  {n:"빛보다 빠른",g:1,s:{spd:[16,26]}},{n:"여신이 총애하는",g:1,s:{luk:[19,30]}},
+  // 저주 (grade 0)
+  {n:"저주받은",g:0,curse:1,s:{hp:[-30,-10]}},{n:"물러터진",g:0,curse:1,s:{def:[-18,-6]}},
+  {n:"둔해빠진",g:0,curse:1,s:{spd:[-10,-4]}},{n:"겁쟁이의",g:0,curse:1,s:{atk:[-16,-6]}},
+  {n:"멍청이의",g:0,curse:1,s:{int:[-16,-6]}},{n:"병약한",g:0,curse:1,s:{hp:[-22,-8]}},
+  {n:"재수없는",g:0,curse:1,s:{luk:[-14,-6]}},{n:"구멍난",g:0,curse:1,s:{mp:[-30,-10]}}
+];
+
+/* ===================== 접미사 (tag) : {n, grade, stats?} 또는 발동효과 {proc, pv} ===================== */
+const SUFFIX=[
+  // g5
+  {n:"부싯돌",g:5,s:{fire:[1,4]}},{n:"조약돌",g:5,s:{def:[1,3]}},{n:"실오라기",g:5,s:{hp:[2,6]}},
+  {n:"반딧불",g:5,s:{lght:[1,4]}},{n:"초심자",g:5,s:{mp:[2,7]}},
+  // g4
+  {n:"견습병",g:4,s:{atk:[3,7]}},{n:"방랑자",g:4,s:{spd:[3,6]}},{n:"도제",g:4,s:{crit:[2,5]}},
+  {n:"화롯불",g:4,s:{fire:[5,11]}},{n:"잔물결",g:4,s:{mp:[6,14]}},{n:"돌거북",g:4,s:{def:[5,11]}},
+  // g3 (발동효과 등장)
+  {n:"파수꾼",g:3,s:{def:[12,22]}},{n:"여명",g:3,s:{crit:[6,11]}},{n:"모닥불",g:3,s:{fire:[12,22]}},
+  {n:"재생",g:3,s:{hpreg:[3,7]}},
+  {n:"흡혈",g:3,proc:"공격 시 입힌 피해의 <b>5%</b>를 체력으로 흡수",pv:75},
+  {n:"가시",g:3,proc:"피격 시 <b>%V%</b>의 피해를 되돌려줌",pv:70,roll:[8,16]},
+  // g2
+  {n:"광전사",g:2,s:{atk:[18,30],def:[-12,-5]}},{n:"대장장이",g:2,s:{def:[18,30],hp:[20,40]}},
+  {n:"서슬",g:2,s:{crit:[12,18]}},
+  {n:"흡혈귀",g:2,proc:"공격 시 입힌 피해의 <b>10%</b>를 체력으로 흡수",pv:220},
+  {n:"폭풍",g:2,proc:"공격 시 <b>12%</b> 확률로 번개 소환 (전격 피해 <b>40</b>)",pv:240},
+  {n:"수호",g:2,proc:"피격 시 <b>10%</b> 확률로 <b>80</b> 피해를 막는 보호막 생성",pv:210},
+  // g1 (전설급 발동효과)
+  {n:"시간지배자",g:1,s:{spd:[20,30],crit:[8,14]}},
+  {n:"창조주",g:1,s:{str:[15,25],dex:[15,25],int:[15,25]}},
+  {n:"흡혈군주",g:1,proc:"공격 시 입힌 피해의 <b>20%</b> 흡수 + 처치 시 최대 체력 <b>+5</b>",pv:520},
+  {n:"뇌신(雷神)",g:1,proc:"공격 시 <b>20%</b> 확률로 낙뢰 (전격 피해 <b>120</b>)",pv:560},
+  {n:"불사조",g:1,proc:"치명상을 입으면 <b>1회</b> 체력을 모두 회복하며 부활",pv:640},
+  {n:"처형",g:1,proc:"체력 <b>15%</b> 이하의 적을 <b>즉사</b>시킴",pv:600},
+  // 저주 (grade 0)
+  {n:"나태",g:0,curse:1,s:{spd:[-14,-6]}},{n:"불운",g:0,curse:1,s:{luk:[-14,-6]}},
+  {n:"저주",g:0,curse:1,s:{atk:[-14,-5],def:[-10,-4]}},{n:"무게추",g:0,curse:1,s:{dex:[-14,-6]}},
+  {n:"균열",g:0,curse:1,proc:"공격 시 <b>10%</b> 확률로 <b>자신도</b> 피해를 입음",pv:-160}
+];
+
+/* grade 분포 : 희귀도별 [g5,g4,g3,g2,g1] 확률 */
+const GRADE_DIST=[
+  [.45,.35,.15,.045,.005],
+  [.30,.35,.25,.085,.015],
+  [.15,.30,.35,.15,.05],
+  [.06,.20,.36,.28,.10],
+  [.02,.10,.30,.38,.20],
+  [.00,.04,.20,.40,.36]
+];
+const CURSE_CHANCE=[.18,.14,.10,.075,.05,.03];
+const BASECOST=[6,15,40,100,260,650];       // 부여 1회 기본 비용 (× 시도횟수)
+const MAXTRY=[5,6,8,9,11,14];                // 희귀도별 최대 부여 횟수(접두/접미 각각 1회 소모)
+const EXPECT=[20,37,67,106,168,254];         // 기대 "부여 가치"(접사 합) 중앙값 = 품질 기준선
+const BASEREWARD=[35,80,190,430,950,1700];   // 희귀도별 보수 바닥(작업 자체의 값)
+const ENCHMULT=5.0;                          // 부여 가치 -> 보수 배율
+const CURSEPEN=0.4;                          // 저주가 붙은 채 넘길 때 보수 배율
+const FINISH_GRUDGE=0.85;                    // 용사가 더 원하는데 그냥 넘길 때 보수 배율
+const PERSUADE_BONUS=1.15;                   // 설득 성공 시 보수 배율
+
+/* ===================== 용사(hero) ===================== */
+const HFACE=["🧝","🧙","🧛","🦹","🧜","🥷","👸","🤴","🧚","👹","🧟","🦸","💂","🕵️","👺"];
+const HADJ=["무모한","허풍쟁이","새침한","우직한","소심한","다혈질","떠돌이","은퇴한","전설의","수상한","순진한","까칠한","호탕한","의심많은"];
+const HCLASS=["검사","궁수","마법사","도적","성기사","광전사","음유시인","용병","기사","사냥꾼","연금술사"];
+const HNAME=["라온","바람","실비아","고든","미르","카이","루나","도끼","펜리르","아리아","보로","진","네르","하늘","크로우"];
+const TEMPS={ // temperament: 반응 크기, 욕심(계속하려는 성향)
+  greedy:{label:"욕심쟁이",greed:.75,swing:1.0},
+  timid :{label:"소심함",  greed:.15,swing:1.2},
+  bold  :{label:"대담함",  greed:.55,swing:0.8},
+  calm  :{label:"무던함",  greed:.40,swing:0.9},
+  hot   :{label:"다혈질",  greed:.50,swing:1.6}
+};
+
+/* 반응 대사 : quality bucket -> [lines] */
+const REACT={
+  legendary:["오오오...! 이건 전설이야! 손이 다 떨리는군!","이런 옵션은 왕궁 보물고에서도 못 봤어!","내... 내 평생의 장비다! 감사합니다 부여사님!","말도 안 돼... 이걸 정말 내가 가져도 되는 겁니까?!"],
+  great:["훌륭해요! 이거면 던전 하나는 거뜬하겠는걸!","오, 수치가 아주 잘 나왔네요. 마음에 듭니다!","이 정도면 자랑하고 다닐 만하지!","솜씨가 좋으시군요. 역시 소문대로야."],
+  good :["나쁘지 않네요. 쓸 만하겠어.","음, 무난합니다. 이 정도면 됐죠.","오케이, 그럭저럭 괜찮은데?","기본은 하는 옵션이네요."],
+  meh  :["어... 이게 다인가요?","좀 아쉬운데... 이걸로 괜찮을까?","흐음, 미묘하네요.","기대보단 별로군..."],
+  bad  :["에이, 이건 좀...","이럴 거면 그냥 맨몸으로 싸우겠소!","수치가 왜 이렇게 짜요?!","돈 아까운데요, 이거."],
+  curse:["으악! 저주가 붙었잖아요!","이거 붉은 글씨... 저주 아닙니까?! 빼주세요!","불길해... 이런 걸 어떻게 차요!","저주받은 장비라니, 재수없어!"]
+};
+const WISH_STOP=["(이 정도면 만족해요, 이제 그만 넘겨주세요!)","(더 하다 망치느니 여기서 멈추죠.)","(욕심 부리지 않을래요. 완성해주세요.)"];
+const WISH_GO  =["(조금만 더 욕심내볼까요? 한 번만 더!)","(아직 만족 못 해요. 다시 해봐요!)","(더 좋은 게 나올 것 같은데... 계속!)"];
+
+/* ===================== 게임 상태 ===================== */
+let G={gold:300,fame:0,done:0};
+let cur=null;   // 현재 의뢰 {base,rarity,hero,maxTry,want,expect}
+let item=null;  // {base,rarity,prefix,suffix}
+let usedTry=0, spent=0, mood=55, rolling=false, persuadeUsed=false, wishNow="", jobDone=false;
+
+const RANKS=[[0,"견습 마법부여사",1],[50,"정식 마법부여사",2],[150,"숙련 마법부여사",3],
+             [400,"명장 마법부여사",4],[900,"대(大)마법부여사",5],[2000,"전설의 마법부여사",5]];
+function rankInfo(){let r=RANKS[0];for(const x of RANKS)if(G.fame>=x[0])r=x;return r;}
+function unlockedMaxRarity(){return rankInfo()[2];} // 해금된 최고 희귀도 index+1 상한
+
+/* ===================== 접사 롤링 ===================== */
+function pickGrade(rar){
+  const d=GRADE_DIST[rar],r=Math.random();let a=0;
+  for(let g=0;g<5;g++){a+=d[g];if(r<a)return 5-g;} // index0->g5
+  return 1;
+}
+function rollAffix(pool,rar){
+  let a;
+  if(chance(CURSE_CHANCE[rar])){
+    const c=pool.filter(x=>x.curse); a=rnd(c);
+  }else{
+    const g=pickGrade(rar);
+    let list=pool.filter(x=>x.g===g&&!x.curse);
+    if(!list.length)list=pool.filter(x=>!x.curse&&x.g<=g); // fallback
+    a=rnd(list);
+  }
+  // materialize
+  const out={n:a.n,g:a.g,curse:!!a.curse,lines:[],proc:null,value:0};
+  if(a.s){
+    for(const st in a.s){
+      const v=ri(a.s[st][0],a.s[st][1]);
+      out.lines.push({st,v});
+      out.value+=SW[st]*v*(v<0?1.5:1);
+    }
+  }
+  if(a.proc){
+    let txt=a.proc, pv=a.pv;
+    if(a.roll){const rv=ri(a.roll[0],a.roll[1]);txt=txt.replace("%V%",rv);pv=pv*(rv/((a.roll[0]+a.roll[1])/2));}
+    out.proc=txt; out.value+=pv;
+  }
+  return out;
+}
+function totalStats(){
+  const t={};
+  const add=src=>{if(src)for(const st in src){t[st]=(t[st]||0)+src[st];}};
+  add(item.base.stats);
+  for(const af of [item.prefix,item.suffix]) if(af) for(const l of af.lines) t[l.st]=(t[l.st]||0)+l.v;
+  return t;
+}
+function itemValue(){
+  let v=EXPECT[item.rarity]*0.35; // 베이스 기여
+  // base stats value
+  for(const st in item.base.stats) v+=SW[st]*item.base.stats[st]*0.5;
+  if(item.prefix)v+=item.prefix.value;
+  if(item.suffix)v+=item.suffix.value;
+  return Math.max(0,v);
+}
+// 부여 가치 = 마법부여사가 더한 값(접사 합). 품질/보수는 이 값이 좌우한다.
+function enchantValue(){return (item.prefix?item.prefix.value:0)+(item.suffix?item.suffix.value:0);}
+function hasCurse(){return (item.prefix&&item.prefix.curse)||(item.suffix&&item.suffix.curse);}
+
+/* ===================== 렌더 ===================== */
+function statSpan(st,v){
+  const nm=SN[st][0],pct=SN[st][1];
+  const cls=v<0?"neg":"pos";
+  const sign=v>0?"+":"";
+  return `<div class="statline"><span class="nm">${nm}</span><span class="vl ${cls}">${sign}${v}${pct?"%":""}</span></div>`;
+}
+function affixSect(label,af){
+  if(!af)return `<div class="sect"><div class="sectlbl"><span>${label}</span></div><div class="empty">― 없음 ―</div></div>`;
+  let body="";
+  for(const l of af.lines) body+=statSpan(l.st,l.v);
+  if(af.proc) body+=`<div class="proc${af.curse?" bad":""}">✦ ${af.proc}</div>`;
+  const gl=af.curse?`<span class="grade" style="color:var(--curse)">저주</span>`
+                   :`<span class="grade" style="color:${gradeColor(af.g)}">${af.g}급</span>`;
+  const nmc=af.curse?"neg":"pfx";
+  return `<div class="sect"><div class="sectlbl"><span>${label} · <span class="${af.curse?'neg':''}" style="${af.curse?'':'color:var(--gold)'}">${af.n}</span></span>${gl}</div>${body}</div>`;
+}
+function gradeColor(g){return ["var(--curse)","var(--r5)","var(--r4)","var(--r3)","var(--r2)","var(--dim)"][g];}
+function renderItem(rollingView){
+  if(!item){$("item").innerHTML='<div class="empty" style="text-align:center;margin-top:40px">의뢰를 기다리는 중...</div>';return;}
+  const col=RARCOL[item.rarity];
+  const pfx=item.prefix?`<span class="pfx" style="color:${item.prefix.curse?'var(--curse)':'var(--gold)'}">${item.prefix.n}</span> `:"";
+  const sfxCol=item.suffix?(item.suffix.curse?'var(--curse)':'var(--r4)'):'';
+  const sfxTitle=item.suffix?` <span style="color:${sfxCol}">「${item.suffix.n}」</span>`:"";
+  let epi;
+  if(!item.prefix&&!item.suffix) epi='<span style="color:var(--dim)">✦ 접두사와 접미사를 부여해보세요</span>';
+  else if(!item.suffix) epi='<span style="color:var(--dim)">접미사 슬롯이 비어있습니다</span>';
+  else if(!item.prefix) epi='<span style="color:var(--dim)">접두사 슬롯이 비어있습니다</span>';
+  else epi=`<span style="color:${sfxCol}">${item.suffix.n}의 ${item.suffix.curse?'저주':'가호'}</span>`;
+  let base="";
+  for(const st of STAT_ORDER) if(item.base.stats[st]) base+=statSpan(st,item.base.stats[st]);
+  const tot=totalStats();
+  let tothtml="";
+  for(const st of STAT_ORDER) if(tot[st]) tothtml+=statSpan(st,tot[st]);
+  const ev=enchantValue();
+  const pay=estimatePay();
+  const hasAffix=item.prefix||item.suffix;
+  const q=hasAffix?QLABEL[qualityBucket()]:null;
+  const qhtml=q?`<div style="text-align:center;margin-top:12px;font-weight:800;font-size:15px;color:${q[1]}">부여 등급 · ${q[0]}</div>`:"";
+  $("item").innerHTML=`
+    <div class="iname">${pfx}<span style="color:${col}">${item.base.name}</span>${sfxTitle}</div>
+    <div class="iepithet">${epi}</div>
+    <div class="rarwrap"><span class="irar" style="color:${col}">${RAR[item.rarity]} 등급</span></div>
+    <div class="sect total"><div class="sectlbl"><span>기본 스탯</span></div>${base||'<div class="empty">없음</div>'}</div>
+    ${affixSect("접두사",item.prefix)}
+    ${affixSect("접미사",item.suffix)}
+    <div class="sect total"><div class="sectlbl"><span>합산 스탯</span></div>${tothtml}</div>
+    ${qhtml}
+    <div class="appr">
+      <div><div class="k">부여 가치</div><div class="v" style="color:#ffe6a0">${commafy(ev)}</div></div>
+      <div><div class="k">예상 보수</div><div class="v" style="color:var(--gold)">${commafy(pay)}</div></div>
+      <div><div class="k">현재 손익</div><div class="v" style="color:${pay-spent>=0?'#7effa1':'var(--curse)'}">${pay-spent>=0?'+':''}${commafy(pay-spent)}</div></div>
+    </div>`;
+}
+
+/* ===================== 보수/기분 계산 ===================== */
+function moodMult(){return 0.65+ (mood/100)*0.85;}          // 0.65 ~ 1.5
+function speedMult(){const left=cur.maxTry-usedTry;return 1+left*0.06;}
+function matchMult(){
+  if(!cur.want)return 1;
+  const tot=totalStats();
+  return (tot[cur.want]&&tot[cur.want]>0)?1.15:0.88;
+}
+function estimatePay(){
+  let pay=(BASEREWARD[item.rarity]+enchantValue()*ENCHMULT)*moodMult()*speedMult()*matchMult();
+  if(hasCurse())pay*=CURSEPEN;
+  return Math.max(0,Math.round(pay));
+}
+function curCost(){return Math.round(BASECOST[item.rarity]*(1+usedTry*0.4));}
+
+function qualityBucket(){
+  if(hasCurse())return "curse";
+  const r=enchantValue()/cur.expect;
+  if(r<0.45)return "bad"; if(r<0.95)return "meh"; if(r<1.7)return "good"; if(r<2.9)return "great"; return "legendary";
+}
+const QLABEL={bad:["실망스러움","#ff7a4a"],meh:["평범함","#cfc8f0"],good:["좋음","var(--r2)"],
+  great:["훌륭함","var(--r4)"],legendary:["전설급!","var(--r5)"],curse:["저주받음","var(--curse)"]};
+
+/* ===================== 로그/토스트 ===================== */
+function log(html,cls){const e=document.createElement("div");e.className="e "+(cls||"");e.innerHTML=html;$("log").prepend(e);
+  while($("log").children.length>60)$("log").lastChild.remove();}
+function heroSay(txt){log(`<span class="who">${cur.hero.name}</span> "${txt}"`,"hero");}
+let toastT=null;
+function toast(msg){const t=$("toast");t.textContent=msg;t.classList.add("on");clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove("on"),1400);}
+
+/* ===================== 파티클 연출 (짧게, 자동 종료) ===================== */
+const fxc=$("fxcanvas");let fxx=fxc.getContext("2d");
+let parts=[],fxRun=false;
+function sizeFx(){const w=$("itemwrap");fxc.width=w.clientWidth;fxc.height=w.clientHeight;}
+function burst(color,n,power){
+  sizeFx();
+  const cx=fxc.width/2,cy=fxc.height*0.28;
+  for(let i=0;i<n;i++){const a=Math.random()*Math.PI*2,sp=rf(1,power);
+    parts.push({x:cx,y:cy,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp-1,life:1,col:color,sz:rf(2,5)});}
+  if(!fxRun){fxRun=true;requestAnimationFrame(fxFrame);}
+}
+function fxFrame(){
+  fxx.clearRect(0,0,fxc.width,fxc.height);
+  let alive=false;
+  for(const p of parts){
+    if(p.life<=0)continue; alive=true;
+    p.vy+=0.14;p.x+=p.vx;p.y+=p.vy;p.vx*=0.985;p.life-=0.022;
+    fxx.globalAlpha=clamp(p.life,0,1);fxx.fillStyle=p.col;
+    fxx.beginPath();fxx.arc(p.x,p.y,p.sz*p.life+0.5,0,Math.PI*2);fxx.fill();
+  }
+  fxx.globalAlpha=1;
+  if(alive){requestAnimationFrame(fxFrame);}else{fxRun=false;parts.length=0;fxx.clearRect(0,0,fxc.width,fxc.height);}
+}
+
+/* ===================== 부여 (핵심) ===================== */
+function setBtns(){
+  const noItem=!item;
+  const outOfTry=!noItem&&usedTry>=cur.maxTry;
+  const canPay=!noItem&&G.gold>=curCost();
+  const disEnch=rolling||jobDone||noItem||outOfTry||!canPay;
+  $("bEnchPfx").disabled=disEnch;
+  $("bEnchSfx").disabled=disEnch;
+  const hasAny=!noItem&&(item.prefix||item.suffix);
+  $("bFinish").disabled=rolling||jobDone||!hasAny;
+  $("bPersuade").disabled=rolling||jobDone||!hasAny||persuadeUsed||wishNow!=="go";
+  if(item){
+    const costTxt=outOfTry?"기회 소진":(!canPay?"골드 부족":`${commafy(curCost())} G · ${cur.maxTry-usedTry}회 남음`);
+    $("bEnchPfxSub").textContent=(item.prefix?"교체 · ":"부여 · ")+costTxt;
+    $("bEnchSfxSub").textContent=(item.suffix?"교체 · ":"부여 · ")+costTxt;
+    if(!hasAny)$("bFinishSub").textContent="먼저 부여해야 합니다";
+    else if(wishNow==="go")$("bFinishSub").textContent=`용사가 더 원함 · 보수 ${commafy(Math.round(estimatePay()*FINISH_GRUDGE))} G`;
+    else $("bFinishSub").textContent=`예상 보수 ${commafy(estimatePay())} G`;
+    $("bPersuadeSub").textContent=persuadeUsed?"이미 설득함":!hasAny?"먼저 부여해야 합니다":wishNow==="go"?"이만 하자고 구슬리기 (+15%)":"용사가 만족함 · 완성하세요";
+  }else{$("bEnchPfxSub").textContent="-";$("bEnchSfxSub").textContent="-";$("bFinishSub").textContent="-";}
+}
+function enchant(slot){
+  if(rolling||jobDone||usedTry>=cur.maxTry)return;
+  const cost=curCost();
+  if(G.gold<cost){toast("골드가 부족합니다!");return;}
+  const pool=slot==="prefix"?PREFIX:SUFFIX;
+  const dummySt=slot==="prefix"?"atk":"def";
+  G.gold-=cost;spent+=cost;usedTry++;refreshTop();
+  rolling=true;setBtns();
+  tone(220,0.08,"sawtooth",0.05,180);
+  let ticks=0;
+  const iv=setInterval(()=>{
+    // 시각용 임의 접사 (해당 슬롯만 돌아감)
+    item[slot]={n:rnd(pool).n,g:3,curse:false,lines:[{st:dummySt,v:ri(1,40)}],proc:null,value:0};
+    renderItem(true);
+    tone(320+ticks*30,0.04,"square",0.03);
+    if(++ticks>=12){clearInterval(iv);finalize(slot);}
+  },55);
+}
+function finalize(slot){
+  item[slot]=rollAffix(slot==="prefix"?PREFIX:SUFFIX,item.rarity);
+  renderItem();
+  const q=qualityBucket();
+  const el=$("item");el.classList.remove("flash","shake");void el.offsetWidth;
+  if(q==="curse"){el.style.setProperty("--fx","#ff3355");el.classList.add("flash","shake");burst("#ff4466",26,7);
+    chord([180,150,120],0.3,0.06);moodDelta(-15);}
+  else if(q==="legendary"){el.style.setProperty("--fx","#ffb347");el.classList.add("flash");burst("#ffd76a",60,10);burst("#c05bff",40,8);
+    chord([523,659,784,1046],0.35,0.07);moodDelta(+18);}
+  else if(q==="great"){el.style.setProperty("--fx","#c05bff");el.classList.add("flash");burst("#c05bff",40,8);
+    chord([440,554,659],0.28,0.06);moodDelta(+11);}
+  else if(q==="good"){el.style.setProperty("--fx","#3ee65b");el.classList.add("flash");burst("#3ee65b",22,6);
+    chord([392,494],0.2,0.05);moodDelta(+6);}
+  else if(q==="meh"){el.style.setProperty("--fx","#6a6a8a");el.classList.add("flash");burst("#8a86b0",14,5);
+    tone(300,0.15,"triangle",0.04);moodDelta(-2);}
+  else{el.style.setProperty("--fx","#5a5a70");el.classList.add("shake");burst("#7a7690",12,4);
+    tone(200,0.2,"triangle",0.04,140);moodDelta(-8);}
+  heroSay(rnd(REACT[q]));
+  updateWish(q);
+  rolling=false;refreshTop();setBtns();
+}
+function moodDelta(d){mood=clamp(mood+d*(0.7+cur.hero.temp.swing*0.3),0,100);drawMood();}
+function drawMood(){
+  const b=$("hMoodBar");b.style.width=mood+"%";
+  let c,t;
+  if(mood>=80){c="#7effa1";t="아주 만족 😍";}else if(mood>=60){c="#8fe06a";t="만족 🙂";}
+  else if(mood>=40){c="#ffd76a";t="보통 😐";}else if(mood>=20){c="#ff9a4a";t="불만 😖";}else{c="#ff5566";t="분노 😡";}
+  b.style.background=c;$("hMoodTxt").textContent=t;$("hMoodTxt").style.color=c;
+}
+function updateWish(q){
+  const g=cur.hero.temp.greed;const r=enchantValue()/cur.expect;
+  const left=cur.maxTry-usedTry;
+  let wantGo;
+  if(hasCurse())wantGo=left>0;                      // 저주면 다시 하고 싶어함
+  else if(r>=1.5)wantGo=chance(g*0.4);              // 이미 훌륭 -> 대체로 만족
+  else if(left<=0)wantGo=false;
+  else wantGo=chance(g + (1.1-Math.min(r,1.1))*0.4);// 아쉬울수록/욕심많을수록 계속
+  wishNow=wantGo?"go":"stop";
+  const line=wantGo?rnd(WISH_GO):rnd(WISH_STOP);
+  log(`<span class="who">${cur.hero.name}</span> <span style="color:var(--dim)">${line}</span>`,"hero");
+}
+
+/* ===================== 완성 / 설득 ===================== */
+// 실제 지급/정산 (mult = 보수 배율)
+function doFinish(mult){
+  if(jobDone||!(item.prefix||item.suffix))return;
+  jobDone=true;
+  const pay=Math.round(estimatePay()*mult);
+  G.gold+=pay;G.done++;
+  const q=qualityBucket();
+  const qf={bad:0.4,meh:0.7,good:1.0,great:1.6,legendary:2.4,curse:-0.5}[q];
+  let fame=Math.round([2,4,8,16,30,55][item.rarity]*qf);
+  if(q==="curse")fame=Math.min(fame,-3);
+  else fame=Math.max(1,fame);
+  const beforeRank=rankInfo()[1];
+  G.fame=Math.max(0,G.fame+fame);
+  refreshTop();
+  const net=pay-spent;
+  log(`<b>${cur.hero.name}</b>님에게 넘김 — 보수 <b>+${commafy(pay)} G</b> · 명성 ${fame>=0?'+':''}${fame} · 순이익 ${net>=0?'+':''}${commafy(net)} G`,"money");
+  tone(660,0.12,"triangle",0.06,990);setTimeout(()=>tone(880,0.16,"triangle",0.06,1320),120);
+  const afterRank=rankInfo()[1];
+  showResult(pay,net,fame,q,beforeRank!==afterRank?afterRank:null);
+}
+// '완성하여 넘기기' 버튼 : 용사가 더 원하면 떨떠름하게 받고 보수 감액
+function finishNormal(){
+  if(rolling||jobDone||!(item.prefix||item.suffix))return;
+  if(wishNow==="go"){
+    moodDelta(-6);
+    heroSay(rnd(["에이... 좀만 더 하지. 뭐, 알겠어요.","아쉽지만... 그래요, 이걸로 받죠.","조금 떨떠름하지만 가져갈게요."]));
+    toast("용사가 아쉬워하며 받음 · 보수 -15%");
+    doFinish(FINISH_GRUDGE);
+  }else{
+    if(wishNow==="stop")heroSay(rnd(["좋아요, 이걸로 완성이에요. 고맙습니다!","딱 좋네요. 감사합니다, 부여사님!"]));
+    doFinish(1);
+  }
+}
+// '설득하기' : 용사를 구슬려 흔쾌히 마무리 (성공 시 +15%, 실패 시 거절+기분↓)
+function persuade(){
+  // 용사가 '더 하고 싶어할 때'만 의미가 있다 (이만 마무리하자고 구슬리기)
+  if(rolling||persuadeUsed||jobDone||!(item.prefix||item.suffix)||wishNow!=="go")return;
+  persuadeUsed=true;
+  let p=clamp(0.5+G.fame/3000+(mood-50)/250-cur.hero.temp.greed*0.35, 0.15, 0.85);
+  log(`<span class="sys">당신은 ${cur.hero.name}님을 구슬린다... "이 정도면 최고의 결과입니다. 여기서 마무리하시죠."</span>`,"sys");
+  if(chance(p)){
+    moodDelta(+8);
+    heroSay(rnd(["음... 그러네요. 당신 말이 맞아요. 이걸로 하겠습니다!","듣고보니 그렇군요. 흔쾌히 받죠!","역시 전문가 말이 옳아요. 완성해주세요!"]));
+    toast("설득 성공! 흔쾌히 마무리 · 보수 +15%");
+    tone(700,0.15,"triangle",0.06,1050);
+    doFinish(PERSUADE_BONUS);
+  }else{
+    moodDelta(-6);
+    heroSay(rnd(["싫어요! 제 장비는 제가 정합니다.","말로 넘어갈 줄 알았어요? 한 번 더 해봐요.","흥, 그런 수작은 안 통해요."]));
+    toast("설득 실패... 용사가 고집을 부립니다");
+    tone(200,0.2,"sawtooth",0.05,150);
+    setBtns();
+  }
+}
+
+/* ===================== 결과 화면 / 다음 의뢰 ===================== */
+function showResult(pay,net,fame,q,rankup){
+  const grade={legendary:"전설적인 작품",great:"훌륭한 작품",good:"괜찮은 작품",meh:"평범한 작품",bad:"실망스러운 작품",curse:"저주받은 작품"}[q];
+  $("obox").innerHTML=`
+    <h1>의뢰 완료!</h1>
+    <p style="margin-top:2px">${cur.hero.name} — <b style="color:${RARCOL[item.rarity]}">${item.base.name}</b><br><span style="color:var(--gold)">${grade}</span></p>
+    <div class="resultgrid">
+      <div class="rc"><div class="k">받은 보수</div><div class="v" style="color:var(--gold)">+${commafy(pay)} G</div></div>
+      <div class="rc"><div class="k">순이익</div><div class="v" style="color:${net>=0?'#7effa1':'var(--curse)'}">${net>=0?'+':''}${commafy(net)} G</div></div>
+      <div class="rc"><div class="k">명성 변동</div><div class="v" style="color:#7fd0ff">${fame>=0?'+':''}${fame}</div></div>
+      <div class="rc"><div class="k">부여 횟수</div><div class="v">${usedTry} / ${cur.maxTry}</div></div>
+    </div>
+    ${rankup?`<p style="color:#ffcf5c;font-weight:800;font-size:16px">★ 승급! 이제 당신은 「${rankup}」 ★<br><span style="font-size:12px;color:var(--dim)">더 높은 등급의 의뢰가 들어오기 시작합니다.</span></p>`:""}
+    <button class="btn enchant go" id="bNext">다음 의뢰 받기</button>`;
+  $("overlay").classList.remove("hide");
+  $("bNext").onclick=()=>{$("overlay").classList.add("hide");newJob();};
+  if(rankup)chord([523,659,784,1046,1318],0.4,0.07);
+}
+
+function newJob(){
+  // 희귀도 선택 : 해금범위 내, 명성 높을수록 상위 가중
+  const maxR=Math.min(5,unlockedMaxRarity()-0+ (rankInfo()[2]>=RARCOL.length?0:0));
+  const cap=Math.min(5,rankInfo()[2]); // rank의 3번째 값 = 해금 상한 (1~5)
+  const hi=Math.min(5,cap);
+  const weights=[];let sum=0;
+  for(let r=0;r<=hi;r++){const w=Math.pow(1.5,r)*(r===hi?1.4:1);weights.push(w);sum+=w;}
+  let x=Math.random()*sum,rar=0;for(let r=0;r<weights.length;r++){x-=weights[r];if(x<0){rar=r;break;}}
+  const base=rnd(BASES[rar]);
+  const hero={name:`${rnd(HADJ)} ${rnd(HCLASS)} ${rnd(HNAME)}`,face:rnd(HFACE),temp:rnd(Object.values(TEMPS))};
+  // 원하는 스탯 (가끔)
+  let want=null;
+  if(chance(0.6)) want=rnd(["atk","def","hp","crit"]);
+  cur={base:{name:base[0],stats:base[1]},rarity:rar,hero,maxTry:MAXTRY[rar],want,expect:EXPECT[rar]};
+  item={base:cur.base,rarity:rar,prefix:null,suffix:null};
+  usedTry=0;spent=0;mood=55;persuadeUsed=false;wishNow="";jobDone=false;
+  // 파산 방지: 부여 1회도 못 하면 소액 지원
+  if(G.gold<BASECOST[rar]){G.gold=BASECOST[rar];log("길드에서 최소 작업비를 지원해주었습니다.","sys");}
+  // UI
+  $("hFace").textContent=hero.face;$("hName").textContent=hero.name;
+  $("hTemp").textContent=`성향: ${hero.temp.label}`;
+  const wantTxt=want?`특히 <b>${SN[want][0]}</b> 옵션을 원함`:"좋은 옵션이면 뭐든 좋음";
+  $("hReq").innerHTML=`<b>${RAR[rar]}</b> 등급 「${base[0]}」에<br>마법부여를 의뢰합니다.<br>${wantTxt}<br><span style="color:var(--dim);font-size:11px">최대 ${MAXTRY[rar]}회 부여 가능</span>`;
+  $("hTries").textContent=`${MAXTRY[rar]}회`;$("hSpent").textContent="0 G";
+  drawMood();renderItem();refreshTop();setBtns();
+  log(`<b>${hero.name}</b>님이 <b style="color:${RARCOL[rar]}">${base[0]}</b>(${RAR[rar]})을(를) 들고 찾아왔습니다.`,"sys");
+  tone(520,0.1,"triangle",0.05);
+}
+
+function refreshTop(){
+  $("tGold").textContent=commafy(G.gold);
+  $("tFame").textContent=commafy(G.fame);
+  $("tRank").textContent=rankInfo()[1].replace(" 마법부여사","");
+  $("tDone").textContent=G.done;
+  if(cur){$("hTries").textContent=`${cur.maxTry-usedTry}회`;$("hSpent").textContent=`${commafy(spent)} G`;}
+}
+
+/* ===================== 시작 ===================== */
+$("bEnchPfx").onclick=()=>enchant("prefix");
+$("bEnchSfx").onclick=()=>enchant("suffix");
+$("bFinish").onclick=finishNormal;
+$("bPersuade").onclick=persuade;
+$("bStart").onclick=()=>{startBGM();$("overlay").classList.add("hide");newJob();};
+$("bMute").onclick=toggleMute;
+addEventListener("resize",()=>{if(fxRun)sizeFx();});
+window.addEventListener("keydown",e=>{
+  if($("overlay").classList.contains("hide")){
+    if(e.code==="Digit1"||e.code==="KeyQ"){e.preventDefault();if(!$("bEnchPfx").disabled)enchant("prefix");}
+    if(e.code==="Digit2"||e.code==="KeyW"){e.preventDefault();if(!$("bEnchSfx").disabled)enchant("suffix");}
+    if(e.code==="Enter"){if(!$("bFinish").disabled)finishNormal();}
+  }else if(e.code==="Enter"||e.code==="Space"){const b=$("bNext")||$("bStart");if(b)b.click();}
+});
+refreshTop();
+</script>
+</body>
+</html>
