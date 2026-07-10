@@ -61,6 +61,7 @@ function sfxBomb(){ noise(.5,.6,700); tone(90,.5,"sawtooth",.35,40); }
 function sfxBall(){ for(var i=0;i<6;i++)(function(k){setTimeout(function(){tone(400+k*160,.14,"triangle",.16);},k*45);})(i); }
 function sfxPlane(){ tone(700,.18,"triangle",.18,1500); }
 function sfxTick(){ tone(1400,.06,"square",.15); }
+function sfxError(){ tone(200,.16,"sawtooth",.22,70); tone(150,.16,"square",.14,60); }
 function sfxCombo(n){ tone(500,.2,"square",.2,1200); tone(760,.25,"triangle",.14,1600); }
 function sfxOver(){ [660,520,390,260].forEach(function(f,i){setTimeout(function(){tone(f,.3,"sawtooth",.25);},i*160);}); }
 
@@ -93,7 +94,7 @@ var grid=[];            // grid[r][c] = cell obj or null
 var state="ready";      // ready | play | over
 var score=0, best=+(localStorage.getItem(BEST_KEY)||0);
 var timeLeft=GAME_TIME, last=0, tickSec=-1, overAt=0;
-var shake=0, excite=0, react=0, reactFace="happy", blink=0, blinkT=1.4, T=0;
+var shake=0, excite=0, react=0, reactFace="happy", oops=0, flash=0, blink=0, blinkT=1.4, T=0;
 var parts=[], floats=[];
 
 function newCell(color){ return {color:color, power:0, dy:0, vy:0, sp:0}; }
@@ -251,7 +252,7 @@ function resolveTap(r,c){
     return;
   }
   var cells=group(r,c);
-  if(cells.length<2){ tone(140,.08,"square",.12); return; }
+  if(cells.length<2){ penalty(r,c); return; }   // mistap: single block -> time penalty
   var pw=analyse(cells);
   var cleared=0;
   if(pw){
@@ -270,6 +271,13 @@ function resolveTap(r,c){
   finishTap(cleared, worldX(c), worldY(r));
 }
 
+function penalty(r,c){
+  timeLeft=Math.max(0,timeLeft-1);
+  oops=0.7; flash=1; shake=Math.min(shake+7,42);
+  floatText(worldX(c),worldY(r),"-1s","#ff3b3b");
+  sfxError();
+  if(timeLeft<=0) endGame();
+}
 function finishTap(n, x, y){
   if(n>=5){ var bonus=n*n*3; score+=bonus; floatText(x,y-cell*0.4,"+"+bonus,"#fff"); excite=1; sfxCombo(n); }
   else if(n>0){ floatText(x,y-cell*0.4,"+"+(n*10),COL[0]); }
@@ -418,6 +426,10 @@ function drawMascot(cx,cy,rad,mood){
   } else if(mood==="joy"){
     for(s=-1;s<=1;s+=2){ctx.beginPath();ctx.arc(cx+s*ex,ey+rad*0.05,rad*0.16,3.34,6.08);gs();}   // ^ ^ eyes
     ctx.beginPath(); ctx.ellipse(cx,cy+rad*0.4,rad*0.17,rad*0.2,0,0,6.283); gs();                // open smile
+  } else if(mood==="oops"){
+    for(s=-1;s<=1;s+=2){ x_eye(cx+s*ex,ey,rad*0.15); }                               // X X eyes
+    ctx.beginPath(); ctx.arc(cx,cy+rad*0.52,rad*0.2,3.34,6.08); gs();                 // frown
+    glow("#00e5ff",2); path([cx+rad*0.7,cy-rad*0.05, cx+rad*0.86,cy+rad*0.26, cx+rad*0.6,cy+rad*0.26],true); // sweat drop
   } else if(mood==="dead"){
     for(s=-1;s<=1;s+=2){ x_eye(cx+s*ex,ey,rad*0.14); }
     ctx.beginPath(); ctx.arc(cx,cy+rad*0.5,rad*0.2,3.34,6.08); gs();
@@ -434,6 +446,7 @@ function x_eye(x,y,r){ ctx.beginPath(); ctx.moveTo(x-r,y-r);ctx.lineTo(x+r,y+r);
 
 function mascotMood(){
   if(state==="over")return "dead";
+  if(oops>0)return "oops";
   if(excite>0)return "excited";
   if(react>0)return reactFace;
   if(timeLeft<=5)return "panic";
@@ -453,6 +466,8 @@ function update(dt){
   }
   if(excite>0){ excite-=dt*1.2; if(excite<0)excite=0; }
   if(react>0){ react-=dt; if(react<0)react=0; }
+  if(oops>0){ oops-=dt; if(oops<0)oops=0; }
+  if(flash>0){ flash-=dt*2.2; if(flash<0)flash=0; }
   if(shake>0){ shake-=dt*60; if(shake<0)shake=0; }
   blink-=dt; if(blink<0)blink=blinkT+Math.random()*2;
   for(var r=0;r<ROWS;r++)for(var c=0;c<COLS;c++){ var g=grid[r][c]; if(!g)continue;
@@ -473,7 +488,7 @@ function render(){
 
   // HUD: TIME (left) · mascot (top-center) · SCORE (right)
   txt("TIME",bx-4,topH*0.30,Math.min(18,topH*0.16),"#00e5ff","left");
-  txt(("0"+Math.ceil(timeLeft)).slice(-2),bx-4,topH*0.66,Math.min(46,topH*0.40),timeLeft<=10?"#ff2fb0":"#ffe500","left");
+  txt(("0"+Math.ceil(timeLeft)).slice(-2),bx-4,topH*0.66,Math.min(46,topH*0.40),oops>0?"#ff3b3b":(timeLeft<=10?"#ff2fb0":"#ffe500"),"left");
   txt("SCORE",bx+cell*COLS+4,topH*0.30,Math.min(15,topH*0.13),"#39ff88","right");
   txt(""+score,bx+cell*COLS+4,topH*0.64,Math.min(34,topH*0.30),"#39ff88","right");
   drawMascot(W*0.5, topH*0.52, topH*0.40, mascotMood());
@@ -510,6 +525,7 @@ function render(){
     txt((score>=best?"NEW BEST!":"BEST "+best),W/2,H*0.66,Math.min(20,W*0.05),"#39ff88","center");
     if(Math.sin(T*4)>0) txt("- TAP TO RETRY -",W/2,H*0.78,Math.min(20,W*0.05),"#ffffff","center");
   }
+  if(flash>0){ ctx.globalAlpha=Math.min(1,flash)*0.6; glow("#ff2020",8); ctx.beginPath(); ctx.rect(5,5,W-10,H-10); gs(); ctx.globalAlpha=1; } // red mistap flash
   drawMute();
   ctx.restore();
 }
@@ -533,7 +549,7 @@ initBoard(); last=performance.now(); requestAnimationFrame(frame);
 
 // expose for headless testing
 if(typeof window!=="undefined"){ window.__game={update:update,render:render,resolveTap:resolveTap,startGame:startGame,
-  get state(){return state;}, get score(){return score;}, get grid(){return grid;}, POW:POW,
+  get state(){return state;}, get score(){return score;}, get grid(){return grid;}, get timeLeft(){return timeLeft;}, POW:POW,
   setPower:function(r,c,p){ if(grid[r]&&grid[r][c]) grid[r][c].power=p; }}; }
 })();
 </script>
