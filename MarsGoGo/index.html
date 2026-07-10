@@ -102,6 +102,17 @@
   .ov.on{display:flex}
   .box{max-width:470px;text-align:center;background:linear-gradient(180deg,#341917,#20100e);border:1px solid var(--line);border-radius:16px;padding:24px 26px 26px;box-shadow:0 20px 60px #000a}
   .box h1{margin:.1em 0;font-size:27px;text-shadow:0 0 18px #ff6a3d88}
+  /* 파산/대박 전체화면 연출 */
+  #overOv.lose{background:rgba(28,4,4,.93)} #overOv.win{background:rgba(30,22,4,.9)}
+  #overOv .box{transition:none}
+  #overOv.lose .box{border-color:#ff5a6a;box-shadow:0 0 60px #ff2a3a44,0 20px 60px #000a}
+  #overOv.win .box{border-color:var(--gold);box-shadow:0 0 60px #ffcf6b44,0 20px 60px #000a}
+  #overTitle{font-size:clamp(46px,13vw,104px);letter-spacing:.06em;line-height:1;margin:.02em 0 .12em;animation:boom .55s cubic-bezier(.2,1.5,.35,1) both}
+  #overOv.lose #overTitle{color:#ff5a6a;text-shadow:0 0 26px #ff2a3aaa,0 0 70px #b0202066}
+  #overOv.win #overTitle{color:var(--gold);text-shadow:0 0 26px #ffcf6baa}
+  #overOv.lose .box{animation:shakeover .5s ease-out}
+  @keyframes boom{0%{transform:scale(.35) rotate(-4deg);opacity:0}55%{transform:scale(1.12)}100%{transform:scale(1);opacity:1}}
+  @keyframes shakeover{0%,100%{transform:translateX(0)}20%{transform:translateX(-8px)}40%{transform:translateX(7px)}60%{transform:translateX(-5px)}80%{transform:translateX(3px)}}
   .box h1 small{display:block;font-size:12px;color:var(--dim);font-weight:600;letter-spacing:.1em;margin-top:4px}
   .box p{color:var(--dim);line-height:1.6;font-size:13px;margin:.5em 0}
   .box .big{font-size:32px;font-weight:800;font-variant-numeric:tabular-nums;margin:.15em 0}
@@ -947,7 +958,9 @@ function gameOver(){ if(state!=="play")return; state="over"; laborMode=false; la
   document.getElementById("overNet").textContent=fmtMoney(nw); const win=nw>=START_CASH;
   document.getElementById("overTitle").textContent=win?"🎉 대박!":"💸 파산!";
   document.getElementById("overMsg").textContent=win?pick(["믿기지 않는 수익! 이 시장에서 살아남다니.","혹시 내부자? 화성 금융감독원이 지켜봅니다."]):pick(["화성에서 무일푼이 됐어요. 지구행 티켓값도 없네요…","역시 개미는 하우스를 못 이기나 봐요.","감자라도 심으셨어야죠.","빚이 발목을 잡았네요…","채광이라도 더 하실 걸 그랬어요…"]);
-  document.getElementById("overBest").textContent="🏆 최고 기록: "+fmtMoney(Math.round(Math.max(rec,prev))); beep(220,0.5,"sawtooth",0.08,90); }
+  document.getElementById("overBest").textContent="🏆 최고 기록: "+fmtMoney(Math.round(Math.max(rec,prev)));
+  const ov=document.getElementById("overOv"); ov.classList.toggle("lose",!win); ov.classList.toggle("win",win); ov.classList.add("on");  // ← 파산/대박 화면 표시(누락됐던 버그)
+  beep(win?523:220,0.6,win?"triangle":"sawtooth",0.09,win?990:70); }
 document.getElementById("startBtn").addEventListener("click",startGame);
 document.getElementById("restartBtn").addEventListener("click",startGame);
 document.getElementById("borrowBtn").addEventListener("click",borrow);
