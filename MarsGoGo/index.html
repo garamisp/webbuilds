@@ -87,6 +87,8 @@
   .tip{font-size:10.5px;line-height:1.3;padding:5px 7px;border-radius:6px;background:#20100e;border-left:3px solid var(--dimmer)}
   .tip.up{border-color:var(--up)} .tip.down{border-color:var(--down)} .tip.mix{border-color:var(--gold)}
   .tip .tt{color:var(--dim)} .tip .hd{font-weight:800}
+  .tip .rel{font-style:normal;font-weight:800;font-size:9.5px}
+  .tip .rel.rh{color:var(--up)} .tip .rel.rm{color:var(--gold)} .tip .rel.rl{color:var(--down)}
   .tipsEmpty{font-size:10.5px;color:var(--dimmer);line-height:1.4}
 
   .npcPanel{text-align:center;padding-bottom:6px}
@@ -353,7 +355,7 @@ let simTime, sol, phase, phaseT, daysUntilHoliday, newsTimer, sampT, last=0;
 let revealT, revealMovers, holidayLog, holidayNewsT, holidayTheme, cartelTarget;
 let cartel, cartelCd, pendingDump, pendingDumpT;
 let ipoCd;
-let newsQueue, insiderTips, insiderDirty;
+let newsQueue, insiderTips, insiderDirty, insiderActive;
 let laborMode, laborSession, laborClicks, perClick, lastMine;
 let miners, autoRate, minerEventCd, limitedAvailT, shopDirty;
 let state="title";
@@ -399,7 +401,7 @@ function resetGame(){
   simTime=0; sol=1; phase="open"; phaseT=DAY_LEN; daysUntilHoliday=HOLIDAY_CADENCE; newsTimer=2.4; sampT=0;
   revealT=0; revealMovers=""; holidayLog=0; holidayNewsT=0; holidayTheme=null; cartelTarget=null;
   cartel=null; cartelCd=16+Math.random()*18; pendingDump=null; pendingDumpT=0; ipoCd=22+Math.random()*16;
-  newsQueue=[]; refillQueue(); insiderTips=[]; insiderDirty=true;
+  newsQueue=[]; refillQueue(); insiderTips=[]; insiderDirty=true; insiderActive=false;
   laborMode=false; laborSession=0; laborClicks=0; perClick=6; lastMine=0;
   tradeMode="unit"; document.querySelectorAll(".tchip").forEach(x=>x.classList.toggle("active",x.dataset.mode==="unit"));
   miners=[]; autoRate=0; minerEventCd=18+Math.random()*20; limitedAvailT=0; shopDirty=true;
@@ -492,6 +494,25 @@ const NEWS = [
   {t:"화성 GDP 사상 최대치 경신, 콜로니 호황",fx:[[A,0.05]]},
   {t:"외계 생명체 발견설에 전 종목 투기 광풍",fx:[[A,0.07]]},
   {t:"산소세 인상 발표… 소비심리 급랭",fx:[[A,-0.05]]},
+  {t:"감자맥스, 화성 최초 '감자 대통령' 후보 출마 선언",fx:[[0,0.10]]},
+  {t:"감자맥스 감자, 우주선 방열판 소재로 채택… 항공주까지 들썩",fx:[[0,0.09],[2,0.05]]},
+  {t:"감자맥스 감자 싹에서 신종 바이러스… 콜로니 방역 비상",fx:[[0,-0.13]]},
+  {t:"붉은먼지리얼티, 화성 최초 '무중력 사우나' 오픈런",fx:[[1,0.09]]},
+  {t:"붉은먼지리얼티 아파트에서 물(!) 발견… 수도권 프리미엄",fx:[[1,0.12]]},
+  {t:"붉은먼지리얼티, 분양권 '우주 다단계' 연루 의혹",fx:[[1,-0.12]]},
+  {t:"고고로켓, 지구 연예인 우주관광 성공에 티켓 매진 행렬",fx:[[2,0.13]]},
+  {t:"고고로켓 로켓 이름 공모전 1위 '로켓맥거핀'… 화제성 폭발",fx:[[2,0.06]]},
+  {t:"고고로켓, 발사 카운트다운 중 '9,8,7…' 세다 까먹음",fx:[[2,-0.08]]},
+  {t:"포보스전자 로봇, 화성 바둑대회 우승… AI 위상 강화",fx:[[3,0.08]]},
+  {t:"포보스전자 로봇청소기가 사장실 서류 파쇄… 기밀 유출",fx:[[3,-0.09]]},
+  {t:"포보스전자 AI, 스스로 코인 발행 후 시세조종 자백",fx:[[3,-0.11]]},
+  {t:"고고로켓+감자맥스 '우주 감자칩 자판기' 합작 발표",fx:[[2,0.06],[0,0.07]]},
+  {t:"포보스 로봇이 붉은먼지 아파트 무단점거… 로봇 인권 논쟁",fx:[[3,-0.05],[1,-0.05]]},
+  {t:"화성-지구 시차 서머타임 도입 논란에 전 종목 혼조",fx:[[0,0.03],[1,-0.03],[2,0.02],[3,-0.02]]},
+  {t:"화성 최초 로또 1등 당첨금 전액 증시 유입설, 훈풍",fx:[[A,0.06]]},
+  {t:"콜로니 인공태양 30분 정전… 전 종목 일시 패닉",fx:[[A,-0.06]]},
+  {t:"'화성인 첫 등장' 몰카 예능 대박… 소비심리 폭발",fx:[[A,0.05]]},
+  {t:"거대 모래지렁이 목격담 확산, 야외 활동주 급랭",fx:[[A,-0.04]]},
 ];
 const AMBIENT = [
   "📡 위성 데이터 수신 양호… 거래 정상 진행 중","☕ 애널리스트들, 커피 리필하러 자리 비움",
@@ -543,7 +564,23 @@ function genNews(){
   return pick(NEWS);
 }
 function refillQueue(){ while(newsQueue.length<5) newsQueue.push(genNews()); }
-function fireNews(){ const n=newsQueue.shift(); if(insiderTips.length&&insiderTips[0]===n){ insiderTips.shift(); insiderDirty=true; } applyNews(n); refillQueue(); }
+const REL_ACC=["높음","높음","높음","보통","보통","낮음"], REL_FAKE=["낮음","낮음","낮음","보통","보통","높음"];
+const RUMOR_UP=["대형 계약 임박설","깜짝 실적 기대감","인수합병설 부상","신제품 대박 조짐","큰손 매집 정황"];
+const RUMOR_DN=["실적 쇼크설","규제 리스크 부상","오너 리스크 소문","대량 매도 정황","회계 논란 조짐"];
+function fireNews(){ const n=newsQueue.shift();
+  let fired=null;
+  if(insiderTips.length && insiderTips[0].n===n){ fired=insiderTips.shift(); insiderDirty=true; if(!insiderTips.length)insiderActive=false; }
+  applyNews(n);
+  if(fired) checkInsiderBust(n,fired);
+  refillQueue(); }
+function checkInsiderBust(n,tip){                        // 진짜 호재를 미리 사서 크게 물렸을 때만 확률 적발
+  if(tip.fake) return;                                   // 가짜 정보론 적발 없음(억울 방지)
+  const net=n.fx.reduce((a,f)=>a+f[1],0); if(net<=0.02) return;
+  const t=n.fx.find(f=>f[1]>0 && f[0]!==A); if(!t) return; const s=CORE[t[0]]; if(!s||s.status!=="listed")return;
+  if(s.sh*s.px/Math.max(netWorth(),1) < 0.25) return;
+  if(Math.random()<0.28){ const conf=Math.max(1,Math.floor(s.sh*0.35)); s.sh-=conf; if(s.sh===0)s.avg=0;
+    addTick("🚨 화성 금융감독원: "+s.name+" 내부자 거래 적발! "+conf+"주 몰수","n-down");
+    if(!laborMode)npcSay("꺄악?! 내부자 거래 적발이에요…!","shock",3.6); beep(180,0.5,"sawtooth",0.09,80); flashCard(s); } }
 function fxStocks(idx){ return idx===A ? STOCKS.filter(s=>s.status==="listed") : (CORE[idx]&&CORE[idx].status==="listed"?[CORE[idx]]:[]); }
 function applyNews(n){
   let net=0, hitHeld=false;
@@ -653,7 +690,7 @@ function reopen(){
   revealMovers = moved.length ? moved.slice(0,6).map(m=>`<span class="${m.p>=0?'up':'down'}">${m.s.tkr} ${m.p>=0?'▲':'▼'}${Math.abs(m.p).toFixed(0)}%</span>`).join("&nbsp;&nbsp;")
     : "<span class='n-amb'>큰 변동 없이 잠잠하게 개장</span>";
   phase="open"; phaseT=DAY_LEN; sol++; daysUntilHoliday=HOLIDAY_CADENCE; revealT=2.8;
-  newsQueue=[]; refillQueue(); insiderTips=[]; insiderDirty=true; setBgmMode("hope");
+  newsQueue=[]; refillQueue(); insiderTips=[]; insiderDirty=true; insiderActive=false; setBgmMode("hope");
   if(held>1){ beep(523,0.5,"triangle",0.08,784); if(!laborMode)npcSay(pick(LINES.gapUp),"excited",3.2); }
   else if(held<-1){ beep(300,0.6,"sawtooth",0.09,110); if(!laborMode)npcSay(pick(LINES.gapDown),"sad",3.2); }
   else beep(440,0.2,"sine",0.05);
@@ -782,13 +819,21 @@ function repayAll(){ if(state!=="play")return; const amt=Math.min(debt,cash); if
 // ---------- 밀거래 ----------
 function insiderCost(){ return Math.max(500,Math.round(netWorth()*0.03)); }
 function buyInsider(){ if(state!=="play"||laborMode)return; if(insiderTips.length>0)return; const c=insiderCost(); if(cash<c)return;
-  cash-=c; insiderTips=newsQueue.slice(0,3); insiderDirty=true; beep(880,0.12,"triangle",0.05,1200); npcSay(pick(LINES.insider),"happy",3.4); }
+  cash-=c; insiderActive=true;
+  insiderTips=newsQueue.slice(0,3).map(n=>{ const net=n.fx.reduce((a,f)=>a+f[1],0);
+    const fake=Math.random()<0.3; let sent=net>0.001?1:net<-0.001?-1:(Math.random()<0.5?1:-1); if(fake)sent=-sent;  // 가짜는 방향 반대로 표시
+    return {n,fake,sent,rel:pick(fake?REL_FAKE:REL_ACC)}; });
+  insiderDirty=true; beep(880,0.12,"triangle",0.05,1200);
+  npcSay(pick(["쉿, 우리끼리 비밀이에요~ 😉","정보엔 진짜와 가짜가 섞여 있어요… 신뢰도 확인!","너무 대놓고 몰빵하면 감독원이 지켜봐요!"]),"happy",3.6); }
 function rebuildTips(){
   const box=document.getElementById("tips");
-  if(insiderTips.length===0){ box.innerHTML='<div class="tipsEmpty">돈을 내면 <b>다음에 나올 뉴스</b> 3개를 미리 볼 수 있어요.<br>단, <b>언제</b> 나올지는 아무도 몰라요…</div>'; return; }
-  box.innerHTML=insiderTips.map(n=>{ const net=n.fx.reduce((a,f)=>a+f[1],0); const cls=net>0.001?"up":net<-0.001?"down":"mix", arw=net>0.001?"▲ 호재":net<-0.001?"▼ 악재":"⚡ 혼조";
+  if(insiderTips.length===0){ box.innerHTML='<div class="tipsEmpty">돈을 내면 <b>다음에 나올 뉴스</b> 3개를 미리 볼 수 있어요.<br>단 <b>언제</b> 나올지 모르고, 개중엔 <b>가짜 정보</b>도 섞여 있어요 — <b>신뢰도</b>를 보세요!</div>'; return; }
+  box.innerHTML=insiderTips.map(tip=>{ const {n,fake,sent,rel}=tip;
+    const cls=sent>0?"up":sent<0?"down":"mix", arw=sent>0?"▲ 호재":sent<0?"▼ 악재":"⚡ 혼조";
     const tg=n.fx.map(f=>f[0]===A?"전체":(CORE[f[0]]?CORE[f[0]].tkr:"?")).join(",");
-    return `<div class="tip ${cls}"><span class="hd">🔮 곧… [${tg}] ${arw}</span><br><span class="tt">${n.t}</span></div>`; }).join("");
+    const relCls=rel==="높음"?"rh":rel==="보통"?"rm":"rl";
+    let head; if(fake){ const t0=n.fx[0][0], nm=t0===A?"시장 전반":(CORE[t0]?CORE[t0].name:"?"); head=nm+" "+pick(sent>0?RUMOR_UP:RUMOR_DN)+" (미확인)"; } else head=n.t;
+    return `<div class="tip ${cls}"><span class="hd">🔮 곧… [${tg}] ${arw} <em class="rel ${relCls}">(신뢰도 ${rel})</em></span><br><span class="tt">${head}</span></div>`; }).join("");
 }
 
 // ---------- 노동 / 채광 ----------
