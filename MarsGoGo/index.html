@@ -60,6 +60,13 @@
   .sell{background:linear-gradient(180deg,#ff7b88,#e2384c)}
   .trade button:active{transform:translateY(1px);filter:brightness(1.15)}
   .trade button:disabled{background:#3a221e;color:#6b463c;cursor:not-allowed;filter:none}
+  /* 거래 단위 선택 바 */
+  #tradebar{display:flex;align-items:center;gap:6px;padding:5px 12px;background:#1c0e0b;border-bottom:1px solid var(--line);flex-wrap:wrap;flex:none}
+  #tradebar .lbl{font-size:10.5px;color:var(--dimmer);margin-right:2px}
+  .tchip{border:1px solid var(--line);background:#2a1512;color:var(--dim);border-radius:999px;padding:4px 12px;font-size:12px;font-weight:800;cursor:pointer;font-family:inherit}
+  .tchip.active{background:var(--mars);color:#160b09;border-color:var(--mars)}
+  .tchip.allin.active{background:var(--down);border-color:var(--down);color:#fff}
+  .tchip:active{transform:translateY(1px)}
   .card.flash{animation:flash .5s ease-out}
   @keyframes flash{0%{box-shadow:0 0 0 2px #fff8 inset,0 0 22px #ffffff55}100%{box-shadow:none}}
 
@@ -201,6 +208,15 @@
     </div>
   </header>
 
+  <div id="tradebar">
+    <span class="lbl">거래 단위 (매수=현금% · 매도=보유%)</span>
+    <button class="tchip active" data-mode="unit">1주</button>
+    <button class="tchip" data-mode="0.25">25%</button>
+    <button class="tchip" data-mode="0.5">50%</button>
+    <button class="tchip" data-mode="0.75">75%</button>
+    <button class="tchip allin" data-mode="1">100% 올인/전량</button>
+  </div>
+
   <div id="stage">
     <aside>
       <div class="npcPanel">
@@ -332,7 +348,7 @@ const LIMITED_MODEL={ id:99, emoji:"💠", name:"프로토타입 XÆ (한정)", 
 
 // ---------- 상태 ----------
 let STOCKS, CORE, extraAvail;
-let cash, debt, best=0;
+let cash, debt, best=0, tradeMode="unit";  // "unit"=1주 / "0.25"~"1"=현금·보유 비율
 let simTime, sol, phase, phaseT, daysUntilHoliday, newsTimer, sampT, last=0;
 let revealT, revealMovers, holidayLog, holidayNewsT, holidayTheme, cartelTarget;
 let cartel, cartelCd, pendingDump, pendingDumpT;
@@ -362,7 +378,7 @@ function makeCard(s){
   const cv=card.querySelector("canvas");
   s.ui={card,cv,ctx:cv.getContext("2d"),price:card.querySelector(".cprice"),chg:card.querySelector(".cchg"),
     hold:card.querySelector(".hold"),buy:card.querySelector(".buy"),sell:card.querySelector(".sell"),cw:0,ch:0};
-  holdRepeat(s.ui.buy,()=>buy(s)); holdRepeat(s.ui.sell,()=>sell(s));
+  holdRepeat(s.ui.buy,()=>buy(s),()=>tradeMode==="unit"); holdRepeat(s.ui.sell,()=>sell(s),()=>tradeMode==="unit");
 }
 function relayoutGrid(){
   const n=STOCKS.length, mobile=window.innerWidth<=820;
@@ -385,6 +401,7 @@ function resetGame(){
   cartel=null; cartelCd=16+Math.random()*18; pendingDump=null; pendingDumpT=0; ipoCd=22+Math.random()*16;
   newsQueue=[]; refillQueue(); insiderTips=[]; insiderDirty=true;
   laborMode=false; laborSession=0; laborClicks=0; perClick=6; lastMine=0;
+  tradeMode="unit"; document.querySelectorAll(".tchip").forEach(x=>x.classList.toggle("active",x.dataset.mode==="unit"));
   miners=[]; autoRate=0; minerEventCd=18+Math.random()*20; limitedAvailT=0; shopDirty=true;
   relayoutGrid();
   clearTicker();
@@ -740,11 +757,19 @@ function simClosed(dt){
 function sample(dt){ sampT+=dt; if(sampT>=SAMPLE){ sampT-=SAMPLE; for(const s of STOCKS){ s.hist.push(s.px); if(s.hist.length>HIST)s.hist.shift(); } } }
 
 // ---------- 거래 ----------
-function buy(s){ if(!tradable(s))return; const p=s.px; if(cash<p)return; cash-=p; s.avg=(s.avg*s.sh+p)/(s.sh+1); s.sh++; s.px*=1.0008; beep(520,0.05,"square",0.04,640); }
-function sell(s){ if(!tradable(s))return; if(s.sh<=0)return; s.sh--; cash+=s.px; s.px*=0.9992; if(s.sh===0)s.avg=0; beep(420,0.05,"square",0.04,320); }
-function holdRepeat(btn,fn){ let iv=null,to=null; const stop=()=>{clearTimeout(to);clearInterval(iv);to=iv=null;};
+function buy(s){ if(!tradable(s))return; const p=s.px;
+  let qty = tradeMode==="unit" ? 1 : Math.floor(cash*(+tradeMode)/p);
+  qty=Math.min(qty, Math.floor(cash/p)); if(qty<1) return;
+  const cost=p*qty; cash-=cost; s.avg=(s.avg*s.sh+cost)/(s.sh+qty); s.sh+=qty;
+  s.px*=1+Math.min(0.02,0.0008*qty); beep(520,0.05,"square",0.04,640); }
+function sell(s){ if(!tradable(s))return; if(s.sh<=0)return;
+  let qty = tradeMode==="unit" ? 1 : Math.max(1,Math.round(s.sh*(+tradeMode)));
+  qty=Math.min(qty, s.sh); s.sh-=qty; cash+=s.px*qty;
+  s.px*=1-Math.min(0.02,0.0008*qty); if(s.sh===0)s.avg=0; beep(420,0.05,"square",0.04,320); }
+function holdRepeat(btn,fn,repeatOk){ let iv=null,to=null; const stop=()=>{clearTimeout(to);clearInterval(iv);to=iv=null;};
   btn.addEventListener("pointerdown",e=>{ e.preventDefault(); stop(); if(btn.disabled)return; fn();  // stop() 먼저 → 이전 타이머 누수 방지
-    to=setTimeout(()=>{ iv=setInterval(()=>{ if(btn.disabled){stop();return;} fn(); },70); },260); });
+    if(repeatOk && !repeatOk()) return;                                    // 단발 모드(%)면 반복 안 함
+    to=setTimeout(()=>{ iv=setInterval(()=>{ if(btn.disabled||(repeatOk&&!repeatOk())){stop();return;} fn(); },70); },260); });
   ["pointerup","pointerleave","pointercancel"].forEach(ev=>btn.addEventListener(ev,stop)); }
 function flashCard(s){ if(!s.ui)return; const c=s.ui.card; c.classList.remove("flash"); void c.offsetWidth; c.classList.add("flash"); }
 function flashCards(){ for(const s of STOCKS) flashCard(s); }
@@ -969,6 +994,8 @@ document.getElementById("insiderBtn").addEventListener("click",buyInsider);
 document.getElementById("laborBtn").addEventListener("click",enterLabor);
 document.getElementById("laborBack").addEventListener("click",exitLabor);
 holdRepeat(document.getElementById("repayBtn"),repay);
+document.querySelectorAll(".tchip").forEach(c=>c.addEventListener("click",()=>{
+  tradeMode=c.dataset.mode; document.querySelectorAll(".tchip").forEach(x=>x.classList.toggle("active",x===c)); }));
 
 // ---------- 메인 루프 (아래 requestAnimationFrame 은 loop 1회 + kickoff 1회) ----------
 function frame(t){
