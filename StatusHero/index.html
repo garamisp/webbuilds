@@ -89,8 +89,10 @@ const enemies=[], frags=[], graves=[];
 let held=null;         // key code of the currently-summoned window, or null
 let openT=0;           // 0..1 scale-in of the held window
 const flyWins=[];      // windows in flight — at most ONE of each type at a time
+let boss=null, bossKills=0;   // dragon boss: part-based (wings must fall before the body)
 let hurt=0, shake=0, launchGrin=0;
 let toastMsg="", toastT=0;
+const BOSS_EVERY=5;    // a dragon appears on every 5th wave
 
 // ---------- window catalog (damage scales with size + content) ----------
 // col = frame colour. spd = travel speed. splash = area-of-effect radius (0 = single target).
@@ -106,7 +108,7 @@ const WINDOWS={
 function reset(){
   cam.x=0; cam.z=0; cam.yaw=0;
   hp=100; wave=0; kills=0; survived=0;
-  held=null; openT=0; flyWins.length=0; hurt=0; shake=0; launchGrin=0; toastT=0;
+  held=null; openT=0; flyWins.length=0; boss=null; bossKills=0; hurt=0; shake=0; launchGrin=0; toastT=0;
   enemies.length=0; frags.length=0; graves.length=0;
   between=true; betweenT=2.0; spawnQueue=0; spawnCd=0;
   const R=()=>(Math.random()*2-1)*ARENA*0.72;
@@ -174,6 +176,35 @@ function drawSkeleton(e){
   ctx.beginPath(); ctx.fillStyle="#ff4b4b";               // faint red eye-glow in the sockets
   ctx.arc(p.sx-0.06*s,p.sy-0.80*s,Math.max(1,s*0.028),0,7);
   ctx.arc(p.sx+0.06*s,p.sy-0.80*s,Math.max(1,s*0.028),0,7); ctx.fill();
+}
+
+// ---------- dragon boss (giant wireframe billboard, destructible parts) ----------
+const DRAGON_BODY=[
+ [-.22,-.22,.22,-.22],[.22,-.22,.30,.14],[.30,.14,.16,.40],[.16,.40,-.16,.40],[-.16,.40,-.30,.14],[-.30,.14,-.22,-.22], // torso
+ [-.06,.40,-.05,.64],[.06,.40,.05,.64],                                        // neck
+ [-.05,.64,-.12,.78],[-.12,.78,0,.90],[0,.90,.12,.78],[.12,.78,.05,.64],[-.08,.70,.08,.70], // head + jaw
+ [-.09,.84,-.19,1.00],[.09,.84,.19,1.00],                                      // horns
+ [-.16,-.22,-.20,-.48],[-.20,-.48,-.11,-.52],[.16,-.22,.20,-.48],[.20,-.48,.11,-.52], // legs
+ [0,-.22,.06,-.50],[.06,-.50,-.09,-.72],[-.09,-.72,.13,-.90],                  // tail
+];
+const DRAGON_WING=[ // right side (x>0); left wing negates x
+ [.26,.28,.98,.52],[.26,.28,1.02,.16],[.26,.28,.90,-.14],                      // struts
+ [.98,.52,1.02,.16],[1.02,.16,.90,-.14],[.90,-.14,.44,.02],                    // trailing membrane
+ [.55,.30,.60,.05],[.72,.36,.78,.06],                                          // inner ribs
+];
+function drawBoss(){
+  const p=proj(boss.x,boss.y,boss.z); if(!p) return;
+  const s=F*boss.scale/p.z; if(s<2) return;
+  const vuln=boss.wingLdead&&boss.wingRdead;
+  if(!boss.wingRdead){ ctx.beginPath(); ctx.lineWidth=boss.flashR>0?3:2; ctx.strokeStyle=boss.flashR>0?"#ffffff":"#e8ecff";
+    for(const g of DRAGON_WING){ ctx.moveTo(p.sx+g[0]*s,p.sy-g[1]*s); ctx.lineTo(p.sx+g[2]*s,p.sy-g[3]*s); } ctx.stroke(); }
+  if(!boss.wingLdead){ ctx.beginPath(); ctx.lineWidth=boss.flashL>0?3:2; ctx.strokeStyle=boss.flashL>0?"#ffffff":"#e8ecff";
+    for(const g of DRAGON_WING){ ctx.moveTo(p.sx-g[0]*s,p.sy-g[1]*s); ctx.lineTo(p.sx-g[2]*s,p.sy-g[3]*s); } ctx.stroke(); }
+  const bodyCol=boss.flashB>0?"#ffffff":(vuln?(Math.sin(boss.t*9)>0?"#ffe08a":"#ffb84a"):"#ffffff"); // pulses gold when exposed
+  ctx.beginPath(); ctx.lineWidth=vuln?2.8:2.2; ctx.strokeStyle=bodyCol;
+  for(const g of DRAGON_BODY){ ctx.moveTo(p.sx+g[0]*s,p.sy-g[1]*s); ctx.lineTo(p.sx+g[2]*s,p.sy-g[3]*s); } ctx.stroke();
+  ctx.beginPath(); ctx.fillStyle="#ff3b3b";
+  ctx.arc(p.sx-0.05*s,p.sy-0.76*s,Math.max(1.5,s*0.03),0,7); ctx.arc(p.sx+0.05*s,p.sy-0.76*s,Math.max(1.5,s*0.03),0,7); ctx.fill();
 }
 
 // ---------- window content drawers (normalised coords: u,v in -0.5..0.5, v up) ----------
@@ -266,6 +297,7 @@ function render(){
   ctx.stroke();
 
   for(const e of enemies) drawSkeleton(e);                        // skeletons
+  if(boss) drawBoss();                                            // dragon boss
 
   for(const s of flyWins) drawWindowBillboard(s,s.x,s.y,s.z,s.spin,1,false);
 
@@ -295,6 +327,19 @@ function drawHUD(){
   if(hurt>0){ ctx.fillStyle="rgba(255,40,40,"+(hurt*0.4)+")"; ctx.fillRect(0,0,W,y0); }  // pain flash (3D only)
   ctx.fillStyle="#2a9f70"; ctx.font="11px 'Courier New',monospace"; ctx.textAlign="left"; ctx.fillText(Math.round(fps)+" FPS",12,16);
 
+  // dragon part HP bars (top-centre): body bar stays locked until both wings fall
+  if(boss){ const bw=Math.min(W*0.6,380), bx0=(W-bw)/2, seg=(bw-16)/3, by=28, vuln=boss.wingLdead&&boss.wingRdead;
+    ctx.textAlign="center"; ctx.fillStyle=gb; ctx.font="bold 12px 'Malgun Gothic',monospace"; ctx.fillText("⚠ 드래곤 ⚠",W/2,by-5);
+    const bar=(i,frac,label,col,locked)=>{ const x=bx0+i*(seg+8);
+      ctx.strokeStyle=gd; ctx.lineWidth=1; ctx.strokeRect(x,by,seg,9);
+      if(locked){ ctx.strokeStyle=col; ctx.beginPath(); ctx.moveTo(x+4,by+4.5); ctx.lineTo(x+seg-4,by+4.5); ctx.stroke(); }
+      else { ctx.fillStyle=col; ctx.fillRect(x+1,by+1,(seg-2)*Math.max(0,frac),7); }
+      ctx.fillStyle=gd; ctx.font="9px 'Malgun Gothic',monospace"; ctx.fillText(label,x+seg/2,by+20); };
+    bar(0, boss.wingLdead?0:boss.hpWL/boss.maxWL, "왼날개", boss.wingLdead?gd:red, false);
+    bar(1, boss.hpB/boss.maxB, "몸통", vuln?amber:gd, !vuln);
+    bar(2, boss.wingRdead?0:boss.hpWR/boss.maxWR, "오른날개", boss.wingRdead?gd:red, false);
+    ctx.textAlign="left"; }
+
   // radar (top-right) — camera space, forward = up (matches the 3D view)
   { const rr=46, rx=W-rr-16, ry=rr+16;
     ctx.beginPath(); ctx.strokeStyle=g; ctx.lineWidth=1.2; ctx.arc(rx,ry,rr,0,7); ctx.stroke();
@@ -304,7 +349,11 @@ function drawHUD(){
       const exr=dx*rcy-dz*rsy, fwd=dx*rsy+dz*rcy;
       let bx=rx+exr*sc, by=ry-fwd*sc; const ox=bx-rx, oy=by-ry, od=Math.hypot(ox,oy);
       if(od>rr){ bx=rx+ox/od*rr; by=ry+oy/od*rr; }
-      ctx.fillStyle="#eaeaea"; ctx.fillRect(bx-1.5,by-1.5,3,3); } }
+      ctx.fillStyle="#eaeaea"; ctx.fillRect(bx-1.5,by-1.5,3,3); }
+    if(boss){ const dx=boss.x-cam.x, dz=boss.z-cam.z, exr=dx*rcy-dz*rsy, fwd=dx*rsy+dz*rcy;
+      let bx=rx+exr*sc, by=ry-fwd*sc; const ox=bx-rx, oy=by-ry, od=Math.hypot(ox,oy);
+      if(od>rr){ bx=rx+ox/od*rr; by=ry+oy/od*rr; }
+      ctx.fillStyle="#ffb84a"; ctx.fillRect(bx-3,by-3,6,6); } }
 
   // toast
   if(toastT>0){ ctx.save(); ctx.globalAlpha=Math.min(1,toastT); ctx.fillStyle=gold;
@@ -449,6 +498,33 @@ function windowBreakFx(x,z,s){ beep(680,0.1,"triangle",0.05,240); noise(0.1,0.06
 function damage(d){ hp-=d; hurt=1; shake=Math.max(shake,0.5); beep(90,0.15,"sawtooth",0.07,50);
   if(hp<=0){ hp=0; gameover(); } }
 
+// ---- dragon boss ----
+function spawnBoss(){
+  const a=Math.random()*Math.PI*2, r=ARENA*0.82, w=Math.max(0,wave), hw=55+w*6, hb=180+w*16;
+  boss={ x:Math.cos(a)*r, z:Math.sin(a)*r, baseY:3.2, y:3.2, t:0, scale:3.6, footR:4.4,
+    spd:2.8, dmg:12+w, cd:1.6, atk:2.0,
+    hpWL:hw, hpWR:hw, hpB:hb, maxWL:hw, maxWR:hw, maxB:hb,
+    wingLdead:false, wingRdead:false, flashL:0, flashR:0, flashB:0 };
+  toast("⚠ 드래곤 등장 ⚠"); beep(70,0.6,"sawtooth",0.1,180); noise(0.4,0.12);
+}
+function bossWingBreak(side){ beep(140,0.28,"sawtooth",0.08,50); noise(0.22,0.11);
+  for(let k=0;k<16;k++) frags.push({x:boss.x+side*2.6,y:boss.y,z:boss.z,
+    dx:side*(2+Math.random()*6),dy:Math.random()*4-1,dz:(Math.random()*2-1)*4,life:0.9}); }
+function hitBoss(part,dmg){                      // part is only "wingL"/"wingR" if that wing is still alive
+  if(part==="wingL"){ boss.hpWL-=dmg; boss.flashL=1; if(boss.hpWL<=0){ boss.hpWL=0; boss.wingLdead=true; toast("왼쪽 날개 파괴!"); bossWingBreak(-1); } return; }
+  if(part==="wingR"){ boss.hpWR-=dmg; boss.flashR=1; if(boss.hpWR<=0){ boss.hpWR=0; boss.wingRdead=true; toast("오른쪽 날개 파괴!"); bossWingBreak(1); } return; }
+  if(!(boss.wingLdead&&boss.wingRdead)){ boss.flashB=1; beep(200,0.05,"square",0.04,120); toast("먼저 양쪽 날개를 부숴라!"); return; } // body armoured
+  boss.hpB-=dmg; boss.flashB=1; beep(240,0.06,"square",0.05,150);
+  if(boss.hpB<=0){ boss.hpB=0; killBoss(); }
+}
+function killBoss(){
+  const bx=boss.x, bz=boss.z, by=boss.y;
+  for(let k=0;k<44;k++) frags.push({x:bx,y:by+(Math.random()*2-1)*2.2,z:bz,
+    dx:(Math.random()*2-1)*11,dy:Math.random()*9,dz:(Math.random()*2-1)*11,life:1.1});
+  boss=null; kills++; bossKills++; hp=Math.min(100,hp+30);
+  toast("★ 드래곤 처치! ★"); beep(80,0.7,"sawtooth",0.1,300); noise(0.55,0.15);
+}
+
 function update(dt){
   if(state!=="play") return;
   survived+=dt;
@@ -467,28 +543,45 @@ function update(dt){
   // flying windows (any number, but only one of each type)
   for(let i=flyWins.length-1;i>=0;i--){ const s=flyWins[i]; s.t+=dt; s.x+=s.vx*dt; s.z+=s.vz*dt; s.spin+=dt*7;
     let hit=null; for(const e of enemies){ if(Math.hypot(s.x-e.x,s.z-e.z) < e.t.size*0.5+s.w*0.5){ hit=e; break; } }
+    let bpart=null;                                        // which dragon part (if any) this window strikes
+    if(!hit && boss && Math.hypot(s.x-boss.x,s.z-boss.z) < boss.footR+s.w*0.5){
+      const pb=proj(boss.x,boss.y,boss.z), pp=proj(s.x,s.y,s.z);
+      if(pb){ const bs=F*boss.scale/pb.z, dxs=(pp?pp.sx:pb.sx)-pb.sx;   // screen-x offset from the dragon centre
+        bpart = (dxs<-0.32*bs && !boss.wingLdead) ? "wingL" : (dxs>0.32*bs && !boss.wingRdead) ? "wingR" : "body";
+      } else bpart="body"; }
     const oob=Math.abs(s.x)>ARENA||Math.abs(s.z)>ARENA;
-    if(hit||oob||s.t>2.4){ const bx=hit?hit.x:s.x, bz=hit?hit.z:s.z;
+    if(hit||bpart||oob||s.t>2.4){ const bx=hit?hit.x:s.x, bz=hit?hit.z:s.z;
+      if(bpart) hitBoss(bpart,s.dmg);
       if(s.splash>0){ for(const e of [...enemies]){ const d=Math.hypot(e.x-bx,e.z-bz);
           if(d<=s.splash+e.t.size*0.4) hurtEnemy(e, s.dmg*(1-0.55*d/(s.splash+0.5))); } }
       else if(hit) hurtEnemy(hit,s.dmg);
-      if(hit||s.splash>0) windowBreakFx(bx,bz,s);
+      if(hit||bpart||s.splash>0) windowBreakFx(bx,bz,s);
       flyWins.splice(i,1); } }
 
   // waves
   const alive=enemies.length;
-  if(between){ betweenT-=dt; if(betweenT<=0){ between=false; wave++; spawnQueue=4+wave*2; spawnCd=0;
+  if(between){ betweenT-=dt; if(betweenT<=0){ between=false; wave++; spawnCd=0;
+      const bossWave = wave%BOSS_EVERY===0;                // boss wave: fewer skeletons alongside one dragon
+      spawnQueue = bossWave ? (3+wave) : (4+wave*2);
       const before=hp; hp=Math.min(100,hp+70); const healed=Math.round(hp-before);   // heal +70 each new wave
       if(healed>0) beep(740,0.14,"sine",0.05,1320);
-      toast("WAVE "+wave+(healed>0?"   +"+healed+" HP":"")); beep(320,0.14,"sawtooth",0.05,190); } }
+      if(bossWave) spawnBoss();
+      toast("WAVE "+wave+(bossWave?" — 드래곤!":"")+(healed>0?"   +"+healed+" HP":"")); beep(320,0.14,"sawtooth",0.05,190); } }
   else { spawnCd-=dt; if(spawnQueue>0 && spawnCd<=0 && alive<38){ spawnEnemy(); spawnQueue--; spawnCd=Math.max(0.3,1.1-wave*0.05); }
-    if(spawnQueue===0 && alive<=Math.floor(wave/6)){ between=true; betweenT=3; } }
+    if(spawnQueue===0 && alive<=Math.floor(wave/6) && !boss){ between=true; betweenT=3; } }
 
   // enemies
   for(let i=enemies.length-1;i>=0;i--){ const e=enemies[i]; e.flash=Math.max(0,e.flash-dt*5); e.atk-=dt;
     const dx=cam.x-e.x, dz=cam.z-e.z, d=Math.hypot(dx,dz)||1;
     if(d>e.t.rng){ e.x+=dx/d*e.t.spd*dt; e.z+=dz/d*e.t.spd*dt; }
     else if(e.atk<=0){ e.atk=e.t.cd; damage(e.t.dmg); } }
+
+  // dragon boss
+  if(boss){ boss.t+=dt; boss.flashL=Math.max(0,boss.flashL-dt*4); boss.flashR=Math.max(0,boss.flashR-dt*4); boss.flashB=Math.max(0,boss.flashB-dt*4);
+    boss.atk-=dt; boss.y=boss.baseY+Math.sin(boss.t*1.4)*0.6;
+    const dx=cam.x-boss.x, dz=cam.z-boss.z, d=Math.hypot(dx,dz)||1, rng=10;
+    if(d>rng){ boss.x+=dx/d*boss.spd*dt; boss.z+=dz/d*boss.spd*dt; }
+    else if(boss.atk<=0){ boss.atk=boss.cd; damage(boss.dmg); shake=Math.max(shake,0.7); beep(70,0.3,"sawtooth",0.08,150); noise(0.2,0.1); } }
 
   // debris
   for(let i=frags.length-1;i>=0;i--){ const f=frags[i]; f.x+=f.dx*dt; f.y+=f.dy*dt; f.z+=f.dz*dt;
@@ -505,10 +598,11 @@ function titleScreen(){ ui.className="on";
    '상태창 소환 <span class="k">I</span>인벤 <span class="k">C</span>캐릭 <span class="k">M</span>지도 <span class="k">K</span>스킬 <span class="k">Q</span>퀘스트 <span class="k">G</span>상점<br>'+
    '같은 키를 <b>한 번 더</b> (또는 <span class="k">클릭</span>) 누르면 바라보는 방향으로 <b>발사</b><br>'+
    '창이 클수록·내용이 많을수록 아프다. 같은 창은 하나씩만, 다른 창은 동시에 발사 가능.<br>'+
+   '<span class="k">5웨이브마다 거대 드래곤</span> — 양쪽 <b>날개</b>부터 부순 뒤 <b>몸통</b>을 노려라!<br>'+
    '<span style="opacity:.7">흰 해골 호드를 상태창으로 부숴라. ESC 로 창 닫기.</span></div>'; }
 function gameover(){ state="over"; document.exitPointerLock&&document.exitPointerLock(); ui.className="on";
   panel.innerHTML='<div class="big">쓰러졌다…</div>'+
-   '<div class="sub">WAVE '+wave+' &nbsp;·&nbsp; '+kills+' 처치 &nbsp;·&nbsp; '+survived.toFixed(0)+'s 생존</div>'+
+   '<div class="sub">WAVE '+wave+' &nbsp;·&nbsp; '+kills+' 처치 &nbsp;·&nbsp; 드래곤 '+bossKills+' &nbsp;·&nbsp; '+survived.toFixed(0)+'s 생존</div>'+
    '<div class="hint blink">클릭 또는 ENTER 로 재도전</div>'; beep(200,0.6,"sawtooth",0.08,40); }
 reset(); titleScreen();
 
