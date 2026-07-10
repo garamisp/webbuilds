@@ -1,0 +1,972 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>🚀 Mars GoGo 시뮬레이터</title>
+<style>
+  :root{
+    --bg:#160b09; --panel:#2a1512; --panel2:#341917;
+    --line:#5a2a22; --txt:#ffe8d8; --dim:#c99a86; --dimmer:#8a6355;
+    --up:#3ff08a; --down:#ff5a6a; --gold:#ffcf6b; --mars:#ff6a3d; --debt:#ff8a5a; --auto:#8fd4ff;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:
+      radial-gradient(120% 90% at 50% -10%, #3a1a12 0%, var(--bg) 55%, #0d0605 100%);
+    color:var(--txt);overflow:hidden;-webkit-user-select:none;user-select:none;
+    font-family:"Segoe UI",system-ui,-apple-system,sans-serif;-webkit-tap-highlight-color:transparent}
+  #app{display:flex;flex-direction:column;height:100%}
+
+  header{display:flex;align-items:center;gap:12px;padding:7px 12px;
+    background:linear-gradient(180deg,#331714,#22100e);border-bottom:1px solid var(--line);flex-wrap:wrap}
+  .brand{font-weight:800;font-size:clamp(14px,2.2vw,21px);white-space:nowrap;text-shadow:0 0 14px #ff6a3d88}
+  .brand small{color:var(--dim);font-weight:600;font-size:.58em;margin-left:6px}
+  .stats{display:flex;gap:8px 15px;flex:1;flex-wrap:wrap;justify-content:flex-end;font-variant-numeric:tabular-nums}
+  .stat{display:flex;flex-direction:column;line-height:1.05;min-width:58px}
+  .stat b{font-size:clamp(13px,1.7vw,18px);font-weight:800}
+  .stat span{font-size:9.5px;color:var(--dimmer);text-transform:uppercase;letter-spacing:.05em}
+  #pl.up b,#net.up b{color:var(--up)} #pl.down b,#net.down b{color:var(--down)}
+  #debtStat b{color:var(--debt)}
+  .daychip{flex-direction:row;align-items:center;gap:7px}
+  .dayring{width:30px;height:30px;flex:none;border-radius:50%;position:relative;
+    background:conic-gradient(var(--mars) 0deg,#3a1f18 0deg)}
+  .dayring:before{content:"";position:absolute;inset:4px;border-radius:50%;background:#22100e}
+  .daymeta{display:flex;flex-direction:column;line-height:1.05}
+  .daymeta #holiCount{font-size:9.5px;color:var(--gold);letter-spacing:0;text-transform:none}
+  .dayring.rest{background:conic-gradient(var(--dimmer) 360deg,#3a1f18 0)}
+
+  #stage{flex:1;display:flex;min-height:0}
+  aside{width:238px;flex:none;display:flex;flex-direction:column;gap:8px;padding:8px;overflow:auto;
+    border-right:1px solid var(--line);background:#1c0e0b}
+  main{flex:1;display:grid;gap:8px;padding:8px;min-height:0;min-width:0}
+
+  .card{background:linear-gradient(180deg,var(--panel),var(--panel2));border:1px solid var(--line);
+    border-radius:10px;display:flex;flex-direction:column;min-height:0;min-width:0;overflow:hidden;position:relative}
+  .card.ipo{border-color:var(--gold);box-shadow:0 0 14px #ffcf6b55}
+  .chead{display:flex;align-items:baseline;gap:6px;padding:6px 9px 3px}
+  .emoji{font-size:16px}.tkr{font-weight:800;letter-spacing:.03em;font-size:13px}
+  .cname{color:var(--dim);font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+  .cprice{font-weight:800;font-variant-numeric:tabular-nums;font-size:clamp(12px,1.6vw,16px)}
+  .cchg{font-size:10px;font-weight:700;font-variant-numeric:tabular-nums;min-width:48px;text-align:right}
+  .up{color:var(--up)}.down{color:var(--down)}
+  canvas.chart{flex:1;width:100%;min-height:0;display:block}
+  .hold{font-size:10px;color:var(--dim);padding:2px 9px;min-height:14px;font-variant-numeric:tabular-nums;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .hold b{color:var(--gold)}
+  .trade{display:flex;gap:6px;padding:5px 8px 7px}
+  .trade button{flex:1;border:none;border-radius:7px;padding:8px 0;font-weight:800;font-size:13px;cursor:pointer;
+    color:#160b09;font-family:inherit;transition:filter .08s,transform .04s}
+  .buy{background:linear-gradient(180deg,#4be89a,#22b972)}
+  .sell{background:linear-gradient(180deg,#ff7b88,#e2384c)}
+  .trade button:active{transform:translateY(1px);filter:brightness(1.15)}
+  .trade button:disabled{background:#3a221e;color:#6b463c;cursor:not-allowed;filter:none}
+  .card.flash{animation:flash .5s ease-out}
+  @keyframes flash{0%{box-shadow:0 0 0 2px #fff8 inset,0 0 22px #ffffff55}100%{box-shadow:none}}
+
+  .panel{background:linear-gradient(180deg,var(--panel),var(--panel2));border:1px solid var(--line);border-radius:10px;padding:9px 10px}
+  .panel h3{margin:0 0 7px;font-size:12px;letter-spacing:.04em;color:var(--gold);display:flex;justify-content:space-between}
+  .prow{display:flex;gap:6px;margin-top:6px}
+  .prow button{flex:1;border:none;border-radius:7px;padding:8px 0;font-weight:800;font-size:12px;cursor:pointer;
+    font-family:inherit;color:#160b09;background:linear-gradient(180deg,#ffd07a,#e8a23c)}
+  .prow button.dark{background:linear-gradient(180deg,#5a3a34,#3f2621);color:var(--txt)}
+  .prow button:active{transform:translateY(1px)}
+  .prow button:disabled{background:#3a221e;color:#6b463c;cursor:not-allowed}
+  .kv{display:flex;justify-content:space-between;font-size:11px;color:var(--dim);font-variant-numeric:tabular-nums;margin:2px 0}
+  .kv b{color:var(--txt)} .kv b.d{color:var(--debt)} .kv b.a{color:var(--auto)}
+  .laborBtn{width:100%;margin-top:8px;border:none;border-radius:8px;padding:10px 0;font-weight:800;font-size:13px;
+    cursor:pointer;font-family:inherit;color:#160b09;background:linear-gradient(180deg,#9fe0ff,#4ba6d8)}
+  .laborBtn:active{transform:translateY(1px)}
+  .tips{margin-top:7px;display:flex;flex-direction:column;gap:5px;min-height:24px}
+  .tip{font-size:10.5px;line-height:1.3;padding:5px 7px;border-radius:6px;background:#20100e;border-left:3px solid var(--dimmer)}
+  .tip.up{border-color:var(--up)} .tip.down{border-color:var(--down)} .tip.mix{border-color:var(--gold)}
+  .tip .tt{color:var(--dim)} .tip .hd{font-weight:800}
+  .tipsEmpty{font-size:10.5px;color:var(--dimmer);line-height:1.4}
+
+  .npcPanel{text-align:center;padding-bottom:6px}
+  #npcSvg{width:100%;max-width:150px;height:auto;display:block;margin:0 auto;image-rendering:pixelated}
+  .bubble{margin-top:6px;background:#20100e;border:1px solid var(--line);border-radius:10px;padding:7px 9px;
+    font-size:11.5px;color:var(--txt);line-height:1.4;min-height:34px;position:relative}
+  .bubble:before{content:"";position:absolute;top:-7px;left:50%;transform:translateX(-50%);
+    border-left:7px solid transparent;border-right:7px solid transparent;border-bottom:7px solid var(--line)}
+  .bubble .who{color:var(--mars);font-weight:800;font-size:10px;letter-spacing:.05em}
+
+  footer{background:#120807;border-top:1px solid var(--line);overflow:hidden;position:relative;display:flex;align-items:center;height:32px;flex:none}
+  .newslabel{background:var(--mars);color:#160b09;font-weight:800;font-size:11px;padding:0 10px;height:100%;
+    display:flex;align-items:center;z-index:2;white-space:nowrap;letter-spacing:.05em;box-shadow:6px 0 12px #000a}
+  #tickwrap{flex:1;overflow:hidden;position:relative;height:100%}
+  #ticker{position:absolute;left:0;top:0;height:100%;display:flex;align-items:center;white-space:nowrap;will-change:transform}
+  #ticker span{padding-right:44px;font-size:13px;font-weight:600;font-variant-numeric:tabular-nums}
+  .n-up{color:var(--up)}.n-down{color:var(--down)}.n-mix{color:var(--gold)}.n-amb{color:var(--dimmer)}
+
+  .ov{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(10,4,3,.85);backdrop-filter:blur(3px);z-index:50;padding:20px}
+  .ov.on{display:flex}
+  .box{max-width:470px;text-align:center;background:linear-gradient(180deg,#341917,#20100e);border:1px solid var(--line);border-radius:16px;padding:24px 26px 26px;box-shadow:0 20px 60px #000a}
+  .box h1{margin:.1em 0;font-size:27px;text-shadow:0 0 18px #ff6a3d88}
+  .box h1 small{display:block;font-size:12px;color:var(--dim);font-weight:600;letter-spacing:.1em;margin-top:4px}
+  .box p{color:var(--dim);line-height:1.6;font-size:13px;margin:.5em 0}
+  .box .big{font-size:32px;font-weight:800;font-variant-numeric:tabular-nums;margin:.15em 0}
+  .box ul{text-align:left;color:var(--dim);font-size:12px;line-height:1.65;margin:12px auto;max-width:380px;padding-left:20px}
+  .box b.g{color:var(--gold)}
+  .go{margin-top:14px;background:linear-gradient(180deg,#ff8a4d,#e2481f);color:#160b09;border:none;border-radius:10px;
+    padding:12px 32px;font-size:16px;font-weight:800;cursor:pointer;font-family:inherit;letter-spacing:.03em}
+  .go.small{padding:8px 16px;font-size:13px;margin:0}
+  .go:active{transform:translateY(1px)}
+  .muteBtn{position:fixed;right:10px;bottom:40px;z-index:40;background:#2a1512cc;border:1px solid var(--line);color:var(--dim);border-radius:8px;width:34px;height:34px;font-size:15px;cursor:pointer}
+
+  #halt{position:fixed;left:0;right:0;top:52px;bottom:34px;display:none;align-items:center;justify-content:center;pointer-events:none;z-index:30}
+  #halt.on{display:flex}
+  .haltBox{background:rgba(20,9,7,.9);border:1px solid var(--mars);border-radius:14px;padding:16px 24px;text-align:center;
+    box-shadow:0 10px 40px #000a,0 0 30px #ff6a3d44;max-width:82%;animation:haltpulse 2s ease-in-out infinite}
+  @keyframes haltpulse{50%{box-shadow:0 10px 40px #000a,0 0 44px #ff6a3d77}}
+  .haltBox h2{margin:.1em 0;font-size:clamp(17px,3vw,25px);text-shadow:0 0 14px #ff6a3d88}
+  .haltBox .d{color:var(--dim);font-size:12.5px;margin:.35em 0}
+  .haltBox .cd{font-size:12px;color:var(--gold);font-variant-numeric:tabular-nums}
+  .haltBox .movers{margin-top:6px;font-weight:800;font-variant-numeric:tabular-nums;font-size:16px}
+
+  /* labor */
+  #laborOv{position:fixed;inset:0;display:none;flex-direction:column;z-index:60;background:radial-gradient(90% 70% at 50% 40%,#2a1a26 0%,#160b12 60%,#080407 100%)}
+  #laborOv.on{display:flex}
+  .laborTop{display:flex;align-items:center;gap:12px;padding:9px 14px;background:#160b12cc;border-bottom:1px solid #4a2a3a;flex-wrap:wrap}
+  .laborTop>div:first-child{font-weight:800;font-size:15px;white-space:nowrap}
+  .lstats{display:flex;gap:8px 14px;flex:1;flex-wrap:wrap;font-size:12px;color:var(--dim);font-variant-numeric:tabular-nums}
+  .lstats b{color:var(--txt);font-size:14px} .lstats b.a{color:var(--auto)}
+  .laborBody{flex:1;display:flex;min-height:0}
+  .mineArea{flex:1;position:relative;overflow:hidden;cursor:crosshair;touch-action:manipulation}
+  .mineArea.shake{animation:shake .12s}
+  @keyframes shake{25%{transform:translate(2px,-2px)}50%{transform:translate(-2px,2px)}75%{transform:translate(1px,1px)}}
+  .oreVein{position:absolute;width:76px;height:76px;display:flex;align-items:center;justify-content:center;font-size:44px;
+    cursor:pointer;filter:drop-shadow(0 0 14px #a6f0ff);transition:left .12s,top .12s;user-select:none;animation:orebob 1.6s ease-in-out infinite}
+  @keyframes orebob{50%{filter:drop-shadow(0 0 22px #d0f8ff)}}
+  .oreVein.cool{pointer-events:none;opacity:.45;filter:grayscale(.6)}
+  .oreVein.hit{animation:orehit .16s}
+  @keyframes orehit{0%{transform:scale(1.3) rotate(-8deg)}100%{transform:scale(1)}}
+  .mineHint{position:absolute;left:0;right:0;bottom:14px;text-align:center;color:var(--dimmer);font-size:12px;pointer-events:none;padding:0 10px}
+  .floater{position:absolute;font-weight:800;font-size:18px;pointer-events:none;color:var(--gold);text-shadow:0 0 8px #000;animation:floatup .9s ease-out forwards}
+  .floater.big{font-size:26px;color:#fff0a0} .floater.auto{color:var(--auto);font-size:14px}
+  @keyframes floatup{0%{opacity:1;transform:translate(-50%,0)}100%{opacity:0;transform:translate(-50%,-60px)}}
+  .laborWarn{position:absolute;left:0;right:0;top:38%;text-align:center;font-size:22px;font-weight:800;pointer-events:none;opacity:0;color:var(--down);text-shadow:0 0 12px #000}
+  .laborWarn.show{animation:warnpop 1.1s ease-out} .laborWarn.good{color:var(--gold)}
+  @keyframes warnpop{0%{opacity:0;transform:scale(.7)}18%{opacity:1;transform:scale(1.1)}100%{opacity:0;transform:scale(1)}}
+  .rock{position:absolute;font-size:26px;opacity:.35;pointer-events:none;filter:grayscale(.4)}
+  .shop{width:286px;flex:none;background:#160b12ee;border-left:1px solid #4a2a3a;overflow:auto;padding:10px}
+  .shop h3{margin:0 0 4px;font-size:13px;color:var(--auto)}
+  .shop .sub{font-size:10.5px;color:var(--dimmer);margin-bottom:8px;line-height:1.4}
+  .mCard{background:#221420;border:1px solid #4a2a3a;border-radius:9px;padding:8px 9px;margin-bottom:8px}
+  .mCard.lim{border-color:var(--gold);box-shadow:0 0 12px #ffcf6b44}
+  .mCard .mh{display:flex;align-items:center;gap:6px;font-weight:800;font-size:13px}
+  .mCard .mh .as{margin-left:auto;font-size:10px;color:var(--gold);letter-spacing:-1px}
+  .mCard .mi{font-size:10.5px;color:var(--dim);margin:3px 0;font-variant-numeric:tabular-nums}
+  .mCard .mi .own{color:var(--auto)} .mCard .mi .down{color:var(--down)}
+  .mCard button{width:100%;border:none;border-radius:7px;padding:8px 0;font-weight:800;font-size:12px;cursor:pointer;font-family:inherit;color:#160b09;background:linear-gradient(180deg,#9fe0ff,#4ba6d8)}
+  .mCard button:active{transform:translateY(1px)} .mCard button:disabled{background:#3a2434;color:#6b5060;cursor:not-allowed}
+
+  @media(max-width:820px){
+    #stage{flex-direction:column;overflow-y:auto}
+    aside{width:auto;flex-direction:row;flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;border-right:none;border-bottom:1px solid var(--line);padding:6px;gap:8px;flex:0 0 auto}
+    aside>*{flex:0 0 auto}
+    .npcPanel{width:130px;display:flex;flex-direction:column;justify-content:center}
+    #npcSvg{max-width:92px}
+    .bubble{font-size:10.5px;min-height:0} .bubble .who{font-size:9px}
+    .panel{width:210px}
+    main{flex:1 0 auto}
+    .laborBody{flex-direction:column} .shop{width:auto;border-left:none;border-top:1px solid #4a2a3a;max-height:44%}
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="brand">🚀 MARS GoGo<small>화성 콜로니 증권거래소</small></div>
+    <div class="stats">
+      <div class="stat"><b id="cash">$10,000</b><span>현금</span></div>
+      <div class="stat"><b id="equity">$0</b><span>주식평가</span></div>
+      <div class="stat" id="net"><b id="netv">$10,000</b><span>총자산</span></div>
+      <div class="stat" id="pl"><b id="plv">+0.0%</b><span>손익</span></div>
+      <div class="stat" id="debtStat"><b id="debtv">$0</b><span>빚</span></div>
+      <div class="stat daychip">
+        <div class="dayring" id="dayRing" title="하루 진행 · 다음 휴장까지"></div>
+        <div class="daymeta"><b id="sol">SOL 1</b><span id="holiCount">휴장 D-4</span></div>
+      </div>
+    </div>
+  </header>
+
+  <div id="stage">
+    <aside>
+      <div class="npcPanel">
+        <!-- 마리 : 화성 모에화 안내원 (픽셀아트 얼굴) -->
+        <svg id="npcSvg" viewBox="0 0 220 220" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges"><rect x="60" y="10" width="100" height="10" fill="#f2ede2"/><rect x="50" y="20" width="10" height="10" fill="#f2ede2"/><rect x="60" y="20" width="100" height="10" fill="#b5472a"/><rect x="160" y="20" width="10" height="10" fill="#f2ede2"/><rect x="40" y="30" width="10" height="10" fill="#d96a3a"/><rect x="50" y="30" width="40" height="10" fill="#b5472a"/><rect x="90" y="30" width="40" height="10" fill="#d96a3a"/><rect x="130" y="30" width="50" height="10" fill="#b5472a"/><rect x="40" y="40" width="10" height="10" fill="#d96a3a"/><rect x="50" y="40" width="130" height="10" fill="#b5472a"/><rect x="40" y="50" width="30" height="10" fill="#b5472a"/><rect x="70" y="50" width="80" height="10" fill="#ffd9b0"/><rect x="150" y="50" width="30" height="10" fill="#b5472a"/><rect x="20" y="60" width="30" height="10" fill="#b5472a"/><rect x="50" y="60" width="120" height="10" fill="#ffd9b0"/><rect x="170" y="60" width="30" height="10" fill="#b5472a"/><rect x="20" y="70" width="10" height="10" fill="#b5472a"/><rect x="30" y="70" width="10" height="10" fill="#d96a3a"/><rect x="40" y="70" width="10" height="10" fill="#b5472a"/><rect x="50" y="70" width="120" height="10" fill="#ffd9b0"/><rect x="170" y="70" width="30" height="10" fill="#b5472a"/><rect x="20" y="80" width="10" height="10" fill="#b5472a"/><rect x="30" y="80" width="10" height="10" fill="#d96a3a"/><rect x="40" y="80" width="10" height="10" fill="#b5472a"/><rect x="50" y="80" width="120" height="10" fill="#ffd9b0"/><rect x="170" y="80" width="30" height="10" fill="#b5472a"/><rect x="20" y="90" width="10" height="10" fill="#b5472a"/><rect x="30" y="90" width="20" height="10" fill="#f2ede2"/><rect x="50" y="90" width="120" height="10" fill="#ffd9b0"/><rect x="170" y="90" width="10" height="10" fill="#b5472a"/><rect x="180" y="90" width="20" height="10" fill="#f2ede2"/><rect x="20" y="100" width="10" height="10" fill="#b5472a"/><rect x="30" y="100" width="10" height="10" fill="#f2ede2"/><rect x="40" y="100" width="10" height="10" fill="#ff5a3d"/><rect x="50" y="100" width="120" height="10" fill="#ffd9b0"/><rect x="170" y="100" width="10" height="10" fill="#b5472a"/><rect x="180" y="100" width="10" height="10" fill="#ff5a3d"/><rect x="190" y="100" width="10" height="10" fill="#f2ede2"/><rect x="20" y="110" width="10" height="10" fill="#b5472a"/><rect x="30" y="110" width="20" height="10" fill="#f2ede2"/><rect x="50" y="110" width="120" height="10" fill="#ffd9b0"/><rect x="170" y="110" width="10" height="10" fill="#b5472a"/><rect x="180" y="110" width="20" height="10" fill="#f2ede2"/><rect x="20" y="120" width="10" height="10" fill="#b5472a"/><rect x="30" y="120" width="10" height="10" fill="#d96a3a"/><rect x="40" y="120" width="10" height="10" fill="#b0551f"/><rect x="50" y="120" width="120" height="10" fill="#ffd9b0"/><rect x="170" y="120" width="30" height="10" fill="#b5472a"/><rect x="20" y="130" width="10" height="10" fill="#b5472a"/><rect x="30" y="130" width="20" height="10" fill="#d96a3a"/><rect x="50" y="130" width="50" height="10" fill="#ffd9b0"/><rect x="100" y="130" width="20" height="10" fill="#eab488"/><rect x="120" y="130" width="50" height="10" fill="#ffd9b0"/><rect x="170" y="130" width="30" height="10" fill="#b5472a"/><rect x="20" y="140" width="10" height="10" fill="#b5472a"/><rect x="30" y="140" width="20" height="10" fill="#d96a3a"/><rect x="50" y="140" width="10" height="10" fill="#b0551f"/><rect x="60" y="140" width="110" height="10" fill="#ffd9b0"/><rect x="170" y="140" width="30" height="10" fill="#b5472a"/><rect x="20" y="150" width="10" height="10" fill="#b5472a"/><rect x="30" y="150" width="20" height="10" fill="#d96a3a"/><rect x="50" y="150" width="10" height="10" fill="#ffd9b0"/><rect x="60" y="150" width="10" height="10" fill="#b0551f"/><rect x="70" y="150" width="100" height="10" fill="#ffd9b0"/><rect x="170" y="150" width="30" height="10" fill="#b5472a"/><rect x="20" y="160" width="30" height="10" fill="#b5472a"/><rect x="50" y="160" width="20" height="10" fill="#ffd9b0"/><rect x="70" y="160" width="10" height="10" fill="#ff5a3d"/><rect x="80" y="160" width="90" height="10" fill="#ffd9b0"/><rect x="170" y="160" width="30" height="10" fill="#b5472a"/><rect x="20" y="170" width="30" height="10" fill="#b5472a"/><rect x="60" y="170" width="100" height="10" fill="#ffd9b0"/><rect x="170" y="170" width="30" height="10" fill="#b5472a"/><rect x="30" y="180" width="20" height="10" fill="#b5472a"/><rect x="90" y="180" width="40" height="10" fill="#ffd9b0"/><rect x="170" y="180" width="20" height="10" fill="#b5472a"/><rect x="70" y="190" width="80" height="10" fill="#f2ede2"/><rect x="50" y="200" width="60" height="10" fill="#b0551f"/><rect x="110" y="200" width="10" height="10" fill="#ff5a3d"/><rect x="120" y="200" width="50" height="10" fill="#b0551f"/><rect x="50" y="210" width="120" height="10" fill="#e67a2f"/><g id="g_eyesOpen"><rect x="70" y="80" width="10" height="10" fill="#2a1712"/><rect x="80" y="80" width="10" height="10" fill="#2a1712"/><rect x="130" y="80" width="10" height="10" fill="#2a1712"/><rect x="140" y="80" width="10" height="10" fill="#2a1712"/><rect x="60" y="90" width="10" height="10" fill="#2a1712"/><rect x="70" y="90" width="10" height="10" fill="#ffffff"/><rect x="80" y="90" width="10" height="10" fill="#2a1712"/><rect x="90" y="90" width="10" height="10" fill="#2a1712"/><rect x="120" y="90" width="10" height="10" fill="#2a1712"/><rect x="130" y="90" width="10" height="10" fill="#ffffff"/><rect x="140" y="90" width="10" height="10" fill="#2a1712"/><rect x="150" y="90" width="10" height="10" fill="#2a1712"/><rect x="60" y="100" width="10" height="10" fill="#2a1712"/><rect x="70" y="100" width="10" height="10" fill="#2a1712"/><rect x="80" y="100" width="10" height="10" fill="#2a1712"/><rect x="90" y="100" width="10" height="10" fill="#2a1712"/><rect x="120" y="100" width="10" height="10" fill="#2a1712"/><rect x="130" y="100" width="10" height="10" fill="#2a1712"/><rect x="140" y="100" width="10" height="10" fill="#2a1712"/><rect x="150" y="100" width="10" height="10" fill="#2a1712"/><rect x="60" y="110" width="10" height="10" fill="#2a1712"/><rect x="70" y="110" width="10" height="10" fill="#2a1712"/><rect x="80" y="110" width="10" height="10" fill="#2a1712"/><rect x="90" y="110" width="10" height="10" fill="#2a1712"/><rect x="120" y="110" width="10" height="10" fill="#2a1712"/><rect x="130" y="110" width="10" height="10" fill="#2a1712"/><rect x="140" y="110" width="10" height="10" fill="#2a1712"/><rect x="150" y="110" width="10" height="10" fill="#2a1712"/><rect x="70" y="120" width="10" height="10" fill="#2a1712"/><rect x="80" y="120" width="10" height="10" fill="#2a1712"/><rect x="130" y="120" width="10" height="10" fill="#2a1712"/><rect x="140" y="120" width="10" height="10" fill="#2a1712"/></g><g id="g_eyesHappy" style="display:none"><rect x="70" y="90" width="10" height="10" fill="#2a1712"/><rect x="80" y="90" width="10" height="10" fill="#2a1712"/><rect x="130" y="90" width="10" height="10" fill="#2a1712"/><rect x="140" y="90" width="10" height="10" fill="#2a1712"/><rect x="60" y="100" width="10" height="10" fill="#2a1712"/><rect x="90" y="100" width="10" height="10" fill="#2a1712"/><rect x="120" y="100" width="10" height="10" fill="#2a1712"/><rect x="150" y="100" width="10" height="10" fill="#2a1712"/></g><g id="g_eyesWide" style="display:none"><rect x="70" y="80" width="10" height="10" fill="#2a1712"/><rect x="80" y="80" width="10" height="10" fill="#2a1712"/><rect x="130" y="80" width="10" height="10" fill="#2a1712"/><rect x="140" y="80" width="10" height="10" fill="#2a1712"/><rect x="60" y="90" width="10" height="10" fill="#2a1712"/><rect x="70" y="90" width="10" height="10" fill="#ffffff"/><rect x="80" y="90" width="10" height="10" fill="#ffffff"/><rect x="90" y="90" width="10" height="10" fill="#2a1712"/><rect x="120" y="90" width="10" height="10" fill="#2a1712"/><rect x="130" y="90" width="10" height="10" fill="#ffffff"/><rect x="140" y="90" width="10" height="10" fill="#ffffff"/><rect x="150" y="90" width="10" height="10" fill="#2a1712"/><rect x="60" y="100" width="10" height="10" fill="#ffffff"/><rect x="70" y="100" width="10" height="10" fill="#ffffff"/><rect x="80" y="100" width="10" height="10" fill="#2a1712"/><rect x="90" y="100" width="10" height="10" fill="#ffffff"/><rect x="120" y="100" width="10" height="10" fill="#ffffff"/><rect x="130" y="100" width="10" height="10" fill="#2a1712"/><rect x="140" y="100" width="10" height="10" fill="#ffffff"/><rect x="150" y="100" width="10" height="10" fill="#ffffff"/><rect x="60" y="110" width="10" height="10" fill="#2a1712"/><rect x="70" y="110" width="10" height="10" fill="#ffffff"/><rect x="80" y="110" width="10" height="10" fill="#ffffff"/><rect x="90" y="110" width="10" height="10" fill="#2a1712"/><rect x="120" y="110" width="10" height="10" fill="#2a1712"/><rect x="130" y="110" width="10" height="10" fill="#ffffff"/><rect x="140" y="110" width="10" height="10" fill="#ffffff"/><rect x="150" y="110" width="10" height="10" fill="#2a1712"/><rect x="70" y="120" width="10" height="10" fill="#2a1712"/><rect x="80" y="120" width="10" height="10" fill="#2a1712"/><rect x="130" y="120" width="10" height="10" fill="#2a1712"/><rect x="140" y="120" width="10" height="10" fill="#2a1712"/></g><g id="g_eyesSleepy" style="display:none"><rect x="60" y="100" width="10" height="10" fill="#2a1712"/><rect x="70" y="100" width="10" height="10" fill="#2a1712"/><rect x="80" y="100" width="10" height="10" fill="#2a1712"/><rect x="90" y="100" width="10" height="10" fill="#2a1712"/><rect x="120" y="100" width="10" height="10" fill="#2a1712"/><rect x="130" y="100" width="10" height="10" fill="#2a1712"/><rect x="140" y="100" width="10" height="10" fill="#2a1712"/><rect x="150" y="100" width="10" height="10" fill="#2a1712"/><rect x="70" y="110" width="10" height="10" fill="#8a3a1e"/><rect x="140" y="110" width="10" height="10" fill="#8a3a1e"/></g><g id="g_browNeutral"><rect x="60" y="70" width="10" height="10" fill="#8a3a1e"/><rect x="70" y="70" width="10" height="10" fill="#8a3a1e"/><rect x="80" y="70" width="10" height="10" fill="#8a3a1e"/><rect x="90" y="70" width="10" height="10" fill="#8a3a1e"/><rect x="120" y="70" width="10" height="10" fill="#8a3a1e"/><rect x="130" y="70" width="10" height="10" fill="#8a3a1e"/><rect x="140" y="70" width="10" height="10" fill="#8a3a1e"/><rect x="150" y="70" width="10" height="10" fill="#8a3a1e"/></g><g id="g_browUp" style="display:none"><rect x="60" y="60" width="10" height="10" fill="#8a3a1e"/><rect x="70" y="60" width="10" height="10" fill="#8a3a1e"/><rect x="80" y="60" width="10" height="10" fill="#8a3a1e"/><rect x="90" y="60" width="10" height="10" fill="#8a3a1e"/><rect x="120" y="60" width="10" height="10" fill="#8a3a1e"/><rect x="130" y="60" width="10" height="10" fill="#8a3a1e"/><rect x="140" y="60" width="10" height="10" fill="#8a3a1e"/><rect x="150" y="60" width="10" height="10" fill="#8a3a1e"/></g><g id="g_browWorried" style="display:none"><rect x="60" y="60" width="10" height="10" fill="#8a3a1e"/><rect x="70" y="60" width="10" height="10" fill="#8a3a1e"/><rect x="140" y="60" width="10" height="10" fill="#8a3a1e"/><rect x="150" y="60" width="10" height="10" fill="#8a3a1e"/><rect x="80" y="70" width="10" height="10" fill="#8a3a1e"/><rect x="90" y="70" width="10" height="10" fill="#8a3a1e"/><rect x="120" y="70" width="10" height="10" fill="#8a3a1e"/><rect x="130" y="70" width="10" height="10" fill="#8a3a1e"/></g><g id="g_mouthNeutral"><rect x="90" y="150" width="10" height="10" fill="#7a2030"/><rect x="120" y="150" width="10" height="10" fill="#7a2030"/><rect x="100" y="160" width="10" height="10" fill="#7a2030"/><rect x="110" y="160" width="10" height="10" fill="#7a2030"/></g><g id="g_mouthSmile" style="display:none"><rect x="80" y="140" width="10" height="10" fill="#7a2030"/><rect x="90" y="140" width="10" height="10" fill="#7a2030"/><rect x="100" y="140" width="10" height="10" fill="#7a2030"/><rect x="110" y="140" width="10" height="10" fill="#7a2030"/><rect x="120" y="140" width="10" height="10" fill="#7a2030"/><rect x="130" y="140" width="10" height="10" fill="#7a2030"/><rect x="80" y="150" width="10" height="10" fill="#7a2030"/><rect x="90" y="150" width="10" height="10" fill="#ff8a94"/><rect x="100" y="150" width="10" height="10" fill="#ff8a94"/><rect x="110" y="150" width="10" height="10" fill="#ff8a94"/><rect x="120" y="150" width="10" height="10" fill="#ff8a94"/><rect x="130" y="150" width="10" height="10" fill="#7a2030"/><rect x="90" y="160" width="10" height="10" fill="#7a2030"/><rect x="100" y="160" width="10" height="10" fill="#7a2030"/><rect x="110" y="160" width="10" height="10" fill="#7a2030"/><rect x="120" y="160" width="10" height="10" fill="#7a2030"/></g><g id="g_mouthOpen" style="display:none"><rect x="90" y="140" width="10" height="10" fill="#7a2030"/><rect x="100" y="140" width="10" height="10" fill="#7a2030"/><rect x="110" y="140" width="10" height="10" fill="#7a2030"/><rect x="120" y="140" width="10" height="10" fill="#7a2030"/><rect x="80" y="150" width="10" height="10" fill="#7a2030"/><rect x="90" y="150" width="10" height="10" fill="#ff8a94"/><rect x="100" y="150" width="10" height="10" fill="#ff8a94"/><rect x="110" y="150" width="10" height="10" fill="#ff8a94"/><rect x="120" y="150" width="10" height="10" fill="#ff8a94"/><rect x="130" y="150" width="10" height="10" fill="#7a2030"/><rect x="90" y="160" width="10" height="10" fill="#7a2030"/><rect x="100" y="160" width="10" height="10" fill="#7a2030"/><rect x="110" y="160" width="10" height="10" fill="#7a2030"/><rect x="120" y="160" width="10" height="10" fill="#7a2030"/></g><g id="g_mouthOpenO" style="display:none"><rect x="110" y="140" width="10" height="10" fill="#7a2030"/><rect x="120" y="140" width="10" height="10" fill="#7a2030"/><rect x="100" y="150" width="10" height="10" fill="#7a2030"/><rect x="110" y="150" width="10" height="10" fill="#7a2030"/><rect x="120" y="150" width="10" height="10" fill="#7a2030"/><rect x="130" y="150" width="10" height="10" fill="#7a2030"/><rect x="110" y="160" width="10" height="10" fill="#7a2030"/><rect x="120" y="160" width="10" height="10" fill="#7a2030"/></g><g id="g_mouthFrown" style="display:none"><rect x="90" y="150" width="10" height="10" fill="#7a2030"/><rect x="100" y="150" width="10" height="10" fill="#7a2030"/><rect x="110" y="150" width="10" height="10" fill="#7a2030"/><rect x="120" y="150" width="10" height="10" fill="#7a2030"/><rect x="80" y="160" width="10" height="10" fill="#7a2030"/><rect x="130" y="160" width="10" height="10" fill="#7a2030"/></g><g id="g_blush" style="display:none"><rect x="50" y="120" width="10" height="10" fill="#ff8a7a"/><rect x="50" y="130" width="10" height="10" fill="#ff8a7a"/><rect x="160" y="120" width="10" height="10" fill="#ff8a7a"/><rect x="160" y="130" width="10" height="10" fill="#ff8a7a"/><rect x="60" y="130" width="10" height="10" fill="#ff8a7a"/><rect x="150" y="130" width="10" height="10" fill="#ff8a7a"/></g><g id="g_sweat" style="display:none"><rect x="180" y="70" width="10" height="10" fill="#9fd0e0"/><rect x="180" y="80" width="10" height="10" fill="#9fd0e0"/></g><g id="g_surprise" style="display:none"><rect x="180" y="50" width="10" height="10" fill="#ff5a3d"/><rect x="200" y="50" width="10" height="10" fill="#ff5a3d"/><rect x="180" y="70" width="10" height="10" fill="#ff5a3d"/><rect x="200" y="70" width="10" height="10" fill="#ff5a3d"/></g><g id="g_tear" style="display:none"><rect x="70" y="130" width="10" height="10" fill="#9fd0e0"/><rect x="70" y="140" width="10" height="10" fill="#9fd0e0"/><rect x="140" y="130" width="10" height="10" fill="#9fd0e0"/><rect x="140" y="140" width="10" height="10" fill="#9fd0e0"/></g><g id="g_zzz" style="display:none"><rect x="180" y="30" width="10" height="10" fill="#ffe08a"/><rect x="190" y="20" width="10" height="10" fill="#ffe08a"/><rect x="170" y="40" width="10" height="10" fill="#ffe08a"/></g><g id="g_sparkle" style="display:none"><rect x="40" y="80" width="10" height="10" fill="#ffe08a"/><rect x="50" y="80" width="10" height="10" fill="#ffe08a"/><rect x="160" y="80" width="10" height="10" fill="#ffe08a"/><rect x="170" y="80" width="10" height="10" fill="#ffe08a"/></g></svg>
+        <div class="bubble"><span class="who">안내원 마리</span><br><span id="npcSpeech">화성 증시에 오신 걸 환영해요!</span></div>
+      </div>
+
+      <div class="panel">
+        <h3>💰 화성은행 <span id="rateLbl" style="color:var(--dimmer);font-weight:600"></span></h3>
+        <div class="kv"><span>대출 잔액</span><b class="d" id="bkDebt">$0</b></div>
+        <div class="kv"><span>⚙️ 자동채광</span><b class="a" id="bkAuto">$0/s</b></div>
+        <div class="prow">
+          <button id="borrowBtn">+$1,000 대출</button>
+          <button id="repayBtn" class="dark">상환 $1,000</button>
+        </div>
+        <div class="prow"><button id="repayAllBtn" class="dark">전액 상환</button></div>
+        <button class="laborBtn" id="laborBtn">⛏️ 노동하러 가기 (채광)</button>
+      </div>
+
+      <div class="panel">
+        <h3>🤫 밀거래소</h3>
+        <div class="prow"><button id="insiderBtn">🔮 정보 구매</button></div>
+        <div class="tips" id="tips"><div class="tipsEmpty">돈을 내면 <b>다음에 나올 뉴스</b> 3개를 미리 볼 수 있어요.<br>단, <b>언제</b> 나올지는 아무도 몰라요…</div></div>
+      </div>
+    </aside>
+
+    <main id="grid"></main>
+  </div>
+
+  <footer>
+    <div class="newslabel">📰 화성속보</div>
+    <div id="tickwrap"><div id="ticker"></div></div>
+  </footer>
+</div>
+
+<button class="muteBtn" id="mute" title="소리">🔊</button>
+<div id="halt"><div class="haltBox" id="haltBox"></div></div>
+
+<div id="laborOv">
+  <div class="laborTop">
+    <div>⛏️ 화성 광산</div>
+    <div class="lstats">
+      <span>현금 <b id="lcash">$0</b></span>
+      <span>세션 <b id="lsession" class="up">+$0</b></span>
+      <span>단가 <b id="lrate">$6</b>/타</span>
+      <span>숙련 <b id="llv">Lv.1</b></span>
+      <span>⚙️ 자동 <b id="lauto" class="a">$0/s</b></span>
+    </div>
+    <button class="go small" id="laborBack">← 돌아가기</button>
+  </div>
+  <div class="laborBody">
+    <div class="mineArea" id="mineArea">
+      <div class="oreVein" id="oreVein">💎</div>
+      <div class="mineHint" id="mineHint">빛나는 광맥을 클릭! · 너무 빠른 연타는 무효 (오토마우스 금지) · 오른쪽에서 자동 채광기 구매</div>
+    </div>
+    <aside class="shop" id="shop"></aside>
+  </div>
+  <div class="laborWarn" id="laborWarn"></div>
+</div>
+
+<div class="ov on" id="titleOv">
+  <div class="box">
+    <h1>🚀 Mars GoGo 시뮬레이터<small>MARS COLONY STOCK EXCHANGE</small></h1>
+    <p>화성 콜로니의 신출내기 개미가 되었습니다.<br>초기 자금 <b class="g">$10,000</b>으로 얼마나 불릴 수 있을까요?</p>
+    <ul>
+      <li>대기업 4종으로 시작 — 이벤트로 <b class="g">신규 상장</b>되어 차트가 최대 8개까지!</li>
+      <li>신규 상장사는 <b class="g">거래정지·상장폐지·합병</b> 등 무슨 일이든 일어나요 (대기업은 안 망함)</li>
+      <li><b class="g">휴장일</b> 사이 뉴스는 다음 개장에 <b class="g">거대한 갭</b>을. <b class="g">작전세력</b>도 조심!</li>
+      <li><b class="g">대출</b>·<b class="g">밀거래</b> 정보, 그리고 <b class="g">⛏️ 노동</b>으로 채광</li>
+      <li>광산에서 <b class="g">자동 채광기</b>를 사면 안 눌러도 벌어요 — 단, <b class="g">불량·AS</b>를 조심!</li>
+    </ul>
+    <button class="go" id="startBtn">거래 시작 ▶</button>
+  </div>
+</div>
+
+<div class="ov" id="overOv">
+  <div class="box">
+    <h1 id="overTitle">💸 파산!</h1>
+    <div class="big" id="overNet">$0</div>
+    <p id="overMsg"></p>
+    <p style="font-size:12px" id="overBest"></p>
+    <button class="go" id="restartBtn">다시 도전 ▶</button>
+  </div>
+</div>
+
+<script>
+"use strict";
+/* =====================================================================
+   Mars GoGo 시뮬레이터 (단일 파일). 종목 데이터는 '객체'에 저장(동적 상장 대응).
+   requestAnimationFrame(frame) 실제 호출은 아래 코드에 딱 2회.
+   ===================================================================== */
+
+// ---------- 종목 정의 ----------
+const CORE_DEFS = [
+  { tkr:"SPUD", emoji:"🥔", name:"감자맥스",       base:14,  sig:0.060, dm:-0.0009 },
+  { tkr:"DUST", emoji:"🏜️", name:"붉은먼지리얼티", base:260, sig:0.022, dm:-0.0005 },
+  { tkr:"GOGO", emoji:"🚀", name:"고고로켓",       base:92,  sig:0.045, dm:-0.0008 },
+  { tkr:"PHB",  emoji:"🤖", name:"포보스전자",     base:640, sig:0.016, dm:-0.0004 },
+];
+const EXTRA_DEFS = [
+  { tkr:"WORM", emoji:"🪱", name:"웜홀배송",       base:26,  sig:0.075, dm:-0.0016 },
+  { tkr:"MBIO", emoji:"🧬", name:"화성바이오",     base:41,  sig:0.070, dm:-0.0014 },
+  { tkr:"RPG",  emoji:"🎮", name:"레드플래닛게임즈", base:18,  sig:0.085, dm:-0.0018 },
+  { tkr:"NOOD", emoji:"🍜", name:"콜로니라면",     base:9,   sig:0.065, dm:-0.0012 },
+  { tkr:"ROCK", emoji:"☄️", name:"소행성캐피탈",   base:60,  sig:0.080, dm:-0.0017 },
+  { tkr:"ADS",  emoji:"🛰️", name:"스푸트닉애드",   base:15,  sig:0.072, dm:-0.0015 },
+  { tkr:"TERA", emoji:"🧪", name:"테라젠",         base:33,  sig:0.078, dm:-0.0016 },
+  { tkr:"BET",  emoji:"🎲", name:"마스벳",         base:7,   sig:0.095, dm:-0.0020 },
+  { tkr:"DEEP", emoji:"🤿", name:"딥마스",         base:50,  sig:0.076, dm:-0.0015 },
+  { tkr:"VAX",  emoji:"🦠", name:"판데믹랩",       base:22,  sig:0.082, dm:-0.0017 },
+];
+const SUSPEND_REASONS=["회계부정 의혹","대표 배임·횡령 정황","공시 누락","주가 조작 제보","분식회계 의심","내부자 거래 정황","실적 조작 의혹"];
+
+// ---------- 상수 ----------
+const START_CASH=10000, FLOOR=0.20, DRAG_K=0.0075, SAMPLE=0.25, HIST=110;
+const DAY_LEN=24, HOLIDAY_LEN=10, MAXCHARTS=8, HOLIDAY_CADENCE=4;  // 정기 휴장 = 4 SOL마다(예측 가능)
+const DEBT_RATE=0.0010, LOAN_STEP=1000, MAX_DEBT=50000;
+const MIN_MINE_MS=250, A=-1, TIMESCALE=0.5;   // 시뮬 전체 속도(0.5 = 절반 느리게)
+
+// ---------- 자동 채광기 ----------
+const MINER_MODELS=[
+  { id:0, emoji:"🔩", name:"자동채광기 Mk.I",   price:900,    rate:1.2,  defect:0.011, as:0.45 },
+  { id:1, emoji:"⚙️", name:"자동채광기 Mk.X",   price:7000,   rate:7,    defect:0.007, as:0.70 },
+  { id:2, emoji:"🛠️", name:"자동채광기 Mk.C",   price:45000,  rate:40,   defect:0.005, as:0.88 },
+  { id:3, emoji:"🤖", name:"자동채광기 Mk.M1000",price:280000, rate:130,  defect:0.003, as:0.97 },
+];
+const LIMITED_MODEL={ id:99, emoji:"💠", name:"프로토타입 XÆ (한정)", price:120000, rate:175, defect:0.004, as:0.99, limited:true };
+
+// ---------- 상태 ----------
+let STOCKS, CORE, extraAvail;
+let cash, debt, best=0;
+let simTime, sol, phase, phaseT, daysUntilHoliday, newsTimer, sampT, last=0;
+let revealT, revealMovers, holidayLog, holidayNewsT, holidayTheme, cartelTarget;
+let cartel, cartelCd, pendingDump, pendingDumpT;
+let ipoCd;
+let newsQueue, insiderTips, insiderDirty;
+let laborMode, laborSession, laborClicks, perClick, lastMine;
+let miners, autoRate, minerEventCd, limitedAvailT, shopDirty;
+let state="title";
+
+// ---------- 종목/카드 ----------
+const grid=document.getElementById("grid");
+function makeStock(def,core){
+  const s={def, tkr:def.tkr,name:def.name,emoji:def.emoji,base:def.base,sig:def.sig,dm:def.dm,big:!!core,
+    px:def.base, sh:0, avg:0, reg:core?-0.0004:def.dm, regT:4+Math.random()*10, shock:0, flash:0,
+    status:"listed", gap:0, evt:null, evtCd: core?1e9 : 14+Math.random()*16, hist:[]};
+  for(let k=0;k<HIST;k++) s.hist.push(def.base*(1+(Math.random()-0.5)*0.01));
+  return s;
+}
+function makeCard(s){
+  const card=document.createElement("div"); card.className="card"+(s.big?"":" ipo");
+  if(!s.big) setTimeout(()=>card.classList.remove("ipo"),4000);
+  card.innerHTML=`<div class="chead"><span class="emoji">${s.emoji}</span><span class="tkr">${s.tkr}</span>
+    <span class="cname">${s.name}</span><span class="cprice"></span><span class="cchg"></span></div>
+    <canvas class="chart"></canvas><div class="hold"></div>
+    <div class="trade"><button class="buy">매수</button><button class="sell">매도</button></div>`;
+  grid.appendChild(card);
+  const cv=card.querySelector("canvas");
+  s.ui={card,cv,ctx:cv.getContext("2d"),price:card.querySelector(".cprice"),chg:card.querySelector(".cchg"),
+    hold:card.querySelector(".hold"),buy:card.querySelector(".buy"),sell:card.querySelector(".sell"),cw:0,ch:0};
+  holdRepeat(s.ui.buy,()=>buy(s)); holdRepeat(s.ui.sell,()=>sell(s));
+}
+function relayoutGrid(){
+  const n=STOCKS.length, mobile=window.innerWidth<=820;
+  const cols=mobile?2:(n<=4?2:n<=6?3:4), rows=Math.ceil(n/cols);
+  grid.style.gridTemplateColumns="repeat("+cols+",minmax(0,1fr))";
+  grid.style.gridTemplateRows="repeat("+rows+",minmax(0,1fr))";
+  grid.style.minHeight=mobile?(rows*200)+"px":"0";
+  STOCKS.forEach(s=>{ if(s.ui && s.ui.card.parentNode!==grid) grid.appendChild(s.ui.card); });
+  sizeCanvases();
+}
+
+function resetGame(){
+  cash=START_CASH; debt=0;
+  grid.innerHTML="";
+  STOCKS=CORE_DEFS.map(d=>makeStock(d,true)); CORE=STOCKS.slice(0,4);
+  extraAvail=EXTRA_DEFS.slice();
+  STOCKS.forEach(makeCard);
+  simTime=0; sol=1; phase="open"; phaseT=DAY_LEN; daysUntilHoliday=HOLIDAY_CADENCE; newsTimer=2.4; sampT=0;
+  revealT=0; revealMovers=""; holidayLog=0; holidayNewsT=0; holidayTheme=null; cartelTarget=null;
+  cartel=null; cartelCd=16+Math.random()*18; pendingDump=null; pendingDumpT=0; ipoCd=22+Math.random()*16;
+  newsQueue=[]; refillQueue(); insiderTips=[]; insiderDirty=true;
+  laborMode=false; laborSession=0; laborClicks=0; perClick=6; lastMine=0;
+  miners=[]; autoRate=0; minerEventCd=18+Math.random()*20; limitedAvailT=0; shopDirty=true;
+  relayoutGrid();
+  clearTicker();
+  ["📡 화성 증권거래소 개장을 환영합니다","🌌 존버는 승리한다… 아마도","🥔 감자는 배신하지 않는다 (아마도)"].forEach(t=>addTick(t,"n-amb"));
+  curMood="neutral"; setMood("neutral"); npcMoodT=0; idleT=6;
+}
+
+// ---------- 유틸 ----------
+function randn(){ let u=0,v=0; while(!u)u=Math.random(); while(!v)v=Math.random(); return Math.sqrt(-2*Math.log(u))*Math.cos(6.2831853*v); }
+function clamp(x,a,b){ return x<a?a:x>b?b:x; }
+function pick(a){ return a[Math.floor(Math.random()*a.length)]; }
+function fmtMoney(v){ const n=v<0;v=Math.abs(v); const s=v<100?v.toFixed(2):Math.round(v).toLocaleString("en-US"); return (n?"-$":"$")+s; }
+function fmtPx(v){ return "$"+(v<10?v.toFixed(3):v<1000?v.toFixed(2):Math.round(v).toLocaleString("en-US")); }
+function equity(){ let e=0; for(const s of STOCKS) e+=s.sh*s.px; return e; }
+function netWorth(){ return cash+equity()-debt; }
+function tradable(s){ return state==="play"&&phase==="open"&&!laborMode&&s.status==="listed"; }
+
+// ---------- 뉴스 데이터 (대기업 0~3 대상) ----------
+const NEWS = [
+  {t:"감자맥스, 화성 최초 '유기농 감자칩' 출시… 콜로니 전체 품절",fx:[[0,0.14]]},
+  {t:"감자맥스 CEO \"감자로 로켓연료 만든다\" 발언에 개미 환호",fx:[[0,0.09]]},
+  {t:"감자맥스 감자, 화성 학교 급식 독점 납품 확정",fx:[[0,0.08]]},
+  {t:"감자맥스 감자, 미슐랭 화성 3스타 획득",fx:[[0,0.12]]},
+  {t:"감자맥스 감자로 만든 보드카 대히트",fx:[[0,0.07]]},
+  {t:"감자맥스, 화성판 '감자 밈코인' 발행 소식에 폭등",fx:[[0,0.11]]},
+  {t:"감자맥스, 지구 수출용 냉동감자 초도물량 완판",fx:[[0,0.08]]},
+  {t:"감자맥스 감자, 우주비행사 필수 간식으로 지정",fx:[[0,0.10]]},
+  {t:"감자맥스 감자밭, 대형 모래폭풍에 전멸… 수확량 0",fx:[[0,-0.16]]},
+  {t:"감자맥스 감자에서 정체불명 화성 벌레 검출, 전량 리콜",fx:[[0,-0.12]]},
+  {t:"감자맥스 밈코인 러그풀 의혹… 개미 곡소리",fx:[[0,-0.14]]},
+  {t:"감자맥스, '감자 없는 감자칩' 야심작 출시 실패",fx:[[0,-0.09]]},
+  {t:"감자맥스 튀김 기름 유출로 콜로니 3구역 정전",fx:[[0,-0.10]]},
+  {t:"감자맥스 감자, 알고 보니 화성산 아닌 지구산 논란",fx:[[0,-0.08]]},
+  {t:"감자맥스 창고 냉동장치 고장… 감자 전부 싹 텄다",fx:[[0,-0.11]]},
+  {t:"붉은먼지리얼티, 올림푸스 몬스 전망 아파트 완판",fx:[[1,0.10]]},
+  {t:"붉은먼지리얼티, 크레이터 뷰 펜트하우스 경매 신기록",fx:[[1,0.07]]},
+  {t:"붉은먼지리얼티, 화성 최초 '중력 조절 수영장' 분양 흥행",fx:[[1,0.08]]},
+  {t:"붉은먼지리얼티, 화성 첫 놀이공원 부지 낙찰",fx:[[1,0.09]]},
+  {t:"붉은먼지리얼티, 지구 부호들의 세컨하우스 성지로 부상",fx:[[1,0.08]]},
+  {t:"붉은먼지리얼티, 신도시 '뉴올림푸스' 청약 300:1",fx:[[1,0.11]]},
+  {t:"붉은먼지리얼티 신축 돔, 기압 누출로 입주 무기한 연기",fx:[[1,-0.11]]},
+  {t:"붉은먼지리얼티 임원, '중력 대출' 사기 혐의 조사",fx:[[1,-0.08]]},
+  {t:"붉은먼지리얼티, 마스퀘이크(화성 지진)에 건물 균열",fx:[[1,-0.11]]},
+  {t:"붉은먼지리얼티, 유령 나오는 돔 논란에 매물 급증",fx:[[1,-0.06]]},
+  {t:"붉은먼지리얼티 분양 광고 과장 적발… 과징금 폭탄",fx:[[1,-0.09]]},
+  {t:"붉은먼지리얼티, 방사능 토양 은폐 의혹 제기",fx:[[1,-0.13]]},
+  {t:"고고로켓, 지구-화성 왕복 티켓 예약 100만 건 돌파",fx:[[2,0.15]]},
+  {t:"고고로켓 신형 엔진 '고고맥스' 시험비행 성공",fx:[[2,0.11]]},
+  {t:"고고로켓, 재사용 로켓 42번째 착륙 성공",fx:[[2,0.09]]},
+  {t:"화성 최대 인플루언서 \"고고로켓 지금 사라\"에 급등",fx:[[2,0.10]]},
+  {t:"고고로켓, 일론머스크 화성점 트윗 한 줄에 급등",fx:[[2,0.12]]},
+  {t:"고고로켓, 목성행 정기노선 세계 최초 개설 발표",fx:[[2,0.13]]},
+  {t:"고고로켓 발사체 3단 분리 실패, 위성 우주미아",fx:[[2,-0.15]]},
+  {t:"고고로켓 승무원 전원 우주멀미로 파업 돌입",fx:[[2,-0.09]]},
+  {t:"고고로켓 CEO, 화성서 셀카 찍다 발사 버튼 눌러",fx:[[2,-0.10]]},
+  {t:"고고로켓, 연료탱크에 콜라 넣은 정황 포착",fx:[[2,-0.13]]},
+  {t:"고고로켓, 우주쓰레기와 충돌… 보험료 폭등",fx:[[2,-0.07]]},
+  {t:"고고로켓 티켓, 알고 보니 편도… 환불 대란",fx:[[2,-0.11]]},
+  {t:"포보스전자, 가사도우미 로봇 '포보이' 예약판매 대박",fx:[[3,0.08]]},
+  {t:"포보스전자, AI 반도체 독점 공급 계약 체결",fx:[[3,0.06]]},
+  {t:"포보스전자, 위성 무리 '포보스 링' 정상 가동",fx:[[3,0.07]]},
+  {t:"포보스전자, 지구 대기업 인수설… 프리미엄 기대",fx:[[3,0.08]]},
+  {t:"포보스전자 AI가 자사주 매집 시작… \"특이점 임박?\"",fx:[[3,0.09]]},
+  {t:"포보스전자, 화성 표준 로봇 OS 채택… 사실상 독점",fx:[[3,0.07]]},
+  {t:"포보스전자 로봇 '포보이', 주인에게 반란… 리콜",fx:[[3,-0.11]]},
+  {t:"포보스전자 AI, 회의 중 \"다들 퇴사하세요\" 논란",fx:[[3,-0.07]]},
+  {t:"포보스전자 공장, 로봇 노조 결성… 생산 마비",fx:[[3,-0.08]]},
+  {t:"화성 인플루언서 \"포보스전자 손절\" 발언에 급락",fx:[[3,-0.09]]},
+  {t:"포보스전자 로봇, 주식 대신 사주다 회삿돈 탕진",fx:[[3,-0.10]]},
+  {t:"포보스전자 신형 칩, 화성 열기에 줄줄이 셧다운",fx:[[3,-0.08]]},
+  {t:"고고로켓, 감자맥스 감자 운송 독점권 획득… 동반 상승",fx:[[2,0.08],[0,0.05]]},
+  {t:"포보스전자 로봇이 붉은먼지리얼티 청소 계약… 윈윈",fx:[[3,0.05],[1,0.05]]},
+  {t:"고고로켓 티켓값 폭등, 감자맥스 배송비 급증 악화",fx:[[0,-0.06],[2,0.04]]},
+  {t:"부동산 거품 우려에 자금이 로봇株로 대이동",fx:[[1,-0.07],[3,0.05]]},
+  {t:"감자맥스 vs 고고로켓 '감자 운임' 소송전 격화",fx:[[0,-0.05],[2,-0.04]]},
+  {t:"고고로켓 로켓, 착륙 대신 옆동네 감자밭에 불시착",fx:[[2,-0.10],[0,-0.06]]},
+  {t:"포보스전자, 붉은먼지리얼티 부실시공 폭로",fx:[[3,0.04],[1,-0.08]]},
+  {t:"화성 독립 선언 루머에 증시 롤러코스터",fx:[[0,0.05],[1,-0.04],[2,0.06],[3,-0.03]]},
+  {t:"화성 중앙은행, 기준금리 전격 인상… 전 종목 출렁",fx:[[A,-0.05]]},
+  {t:"지구發 투자금 대거 유입, 화성 증시 축제",fx:[[A,0.06]]},
+  {t:"태양 플레어 경보! 통신망 마비에 패닉셀",fx:[[A,-0.08]]},
+  {t:"'테라포밍 특별법' 통과 기대감에 동반 상승",fx:[[A,0.05]]},
+  {t:"화성 지하 물 매장량 3배 상향 발표, 훈풍",fx:[[A,0.04]]},
+  {t:"운석 충돌 경보 오보로 판명… 안도 랠리",fx:[[A,0.03]]},
+  {t:"콜로니 물류 대란, 전 종목 배송 지연 우려",fx:[[A,-0.04]]},
+  {t:"콜로니 대축제 시즌 개막, 소비 폭발",fx:[[A,0.05]]},
+  {t:"화성 총선 D-1, 관망세 짙어져",fx:[[A,-0.02]]},
+  {t:"화성 GDP 사상 최대치 경신, 콜로니 호황",fx:[[A,0.05]]},
+  {t:"외계 생명체 발견설에 전 종목 투기 광풍",fx:[[A,0.07]]},
+  {t:"산소세 인상 발표… 소비심리 급랭",fx:[[A,-0.05]]},
+];
+const AMBIENT = [
+  "📡 위성 데이터 수신 양호… 거래 정상 진행 중","☕ 애널리스트들, 커피 리필하러 자리 비움",
+  "🌌 명언: 떨어질 때 사고 오를 때 팔아라 (말은 쉽다)","🥔 제보: 3구역 감자 냄새가 예사롭지 않다",
+  "🛰️ 도킹 정상, 콜로니 산소 농도 안정적","📊 화성 증시, 지구 대비 24시간 39분 늦게 마감",
+  "🔴 붉은 노을이 아름다운 화성의 오후입니다","🤖 포보이 로봇, 오늘도 성실히 출근 완료",
+  "💤 장중 졸음 주의… 매매 버튼 오조작 조심","🧑‍🚀 무리한 대출은 금물!","⛏️ 광산 안전 수칙: 오토마우스 사용 금지",
+];
+const HOLIDAY_NEWS = [
+  {t:"장 마감 후 감자맥스 공장에 원인불명 화재",fx:[[0,-0.13]]},
+  {t:"밤사이 감자맥스, 지구 대형마트 독점 납품 계약설",fx:[[0,0.15]]},
+  {t:"휴장 중 감자 선물가격 폭등… 감자맥스 수혜",fx:[[0,0.12]]},
+  {t:"밤사이 붉은먼지리얼티 CEO 잠적, 먹튀 의혹",fx:[[1,-0.16]]},
+  {t:"휴장일 붉은먼지리얼티 신도시 특별공급 임박설",fx:[[1,0.13]]},
+  {t:"새벽 붉은먼지리얼티 건물서 대규모 누수 사고",fx:[[1,-0.10]]},
+  {t:"밤사이 고고로켓, 지구 정부와 초대형 방위계약설",fx:[[2,0.17]]},
+  {t:"휴장 중 고고로켓 발사장 폭발… 위성 소실",fx:[[2,-0.15]]},
+  {t:"새벽 고고로켓 오너, 지분 대량 매도 정황",fx:[[2,-0.11]]},
+  {t:"새벽 3시, 포보스전자 로봇들 자발적 야근… 생산 폭증",fx:[[3,0.11]]},
+  {t:"휴장일 데이터센터 정전, 포보스전자 서버 다운",fx:[[3,-0.12]]},
+  {t:"밤사이 포보스전자, 차세대 양자칩 공개 예고",fx:[[3,0.10]]},
+  {t:"밤사이 지구발 훈풍, 전 종목 매수 대기 급증",fx:[[A,0.09]]},
+  {t:"새벽 태양풍 경보, 전 종목 투자심리 급랭",fx:[[A,-0.10]]},
+  {t:"휴장 중 화성 정부, 대규모 경기부양책 발표",fx:[[A,0.08]]},
+  {t:"밤사이 화성 전역 정전… 개장 후 혼란 우려",fx:[[A,-0.07]]},
+  {t:"장외 시장서 소문만 무성… 방향은 아무도 모른다",fx:[[A,0.01]]},
+  {t:"밤사이 외계 신호 수신설에 위험자산 선호 급등",fx:[[A,0.06]]},
+];
+const HOLIDAY_THEMES = [
+  {n:"🌙 화성 증시 휴장",   d:"주말입니다. 장이 닫혀도 소문은 흐릅니다…"},
+  {n:"🎆 콜로니 건국기념일", d:"불꽃놀이로 콜로니가 들썩입니다."},
+  {n:"🌪️ 대형 모래폭풍 경보", d:"거래소 폐쇄. 밖은 온통 붉은 먼지…"},
+  {n:"🛑 서킷브레이커 발동",  d:"변동성 폭발로 거래가 일시 중단되었습니다."},
+  {n:"🎃 화성 핼러윈",       d:"로봇들도 오늘은 쉽니다."},
+  {n:"🕵️ 작전세력 침투 정황", d:"장 마감 후 수상한 자금이 움직입니다…", cartel:true},
+];
+const MINER_FLAVOR=[
+  "🏆 '자동채광기 Mk.C' 올해의 채광기 대상 수상","🔧 채광기 정비사 자격증 응시 폭주",
+  "⛏️ 광산 노동자들 \"자동화가 일자리를 뺏는다\" 시위","💡 신형 드릴비트 개발로 채광 효율 향상 기대",
+];
+
+// ---------- 뉴스 큐 ----------
+function genNews(){
+  const nw=Math.max(netWorth(),1); let hot=-1,hv=0;
+  for(let i=0;i<CORE.length;i++){ const c=CORE[i]; if(c.status!=="listed")continue; const h=c.sh*c.px/nw; if(h>hv){hv=h;hot=i;} }
+  if(hot>=0 && Math.random()<Math.min(0.55,hv)){
+    const bad=NEWS.filter(n=>n.fx.some(f=>f[0]===hot&&f[1]<0)); if(bad.length) return pick(bad);
+  }
+  return pick(NEWS);
+}
+function refillQueue(){ while(newsQueue.length<5) newsQueue.push(genNews()); }
+function fireNews(){ const n=newsQueue.shift(); if(insiderTips.length&&insiderTips[0]===n){ insiderTips.shift(); insiderDirty=true; } applyNews(n); refillQueue(); }
+function fxStocks(idx){ return idx===A ? STOCKS.filter(s=>s.status==="listed") : (CORE[idx]&&CORE[idx].status==="listed"?[CORE[idx]]:[]); }
+function applyNews(n){
+  let net=0, hitHeld=false;
+  n.fx.forEach(([idx,pct])=>{ fxStocks(idx).forEach(s=>{ s.px*=(1+pct); s.shock+=pct*1.4; s.flash=1; flashCard(s); if(s.sh>0)hitHeld=true; }); net+=pct; });
+  const cls=net>0.001?"n-up":net<-0.001?"n-down":"n-mix", icon=net>0.001?"📈":net<-0.001?"📉":"⚡";
+  addTick(icon+" "+n.t,cls); beep(net>0?660:300,0.12,"sine",0.05,net>0?880:200);
+  if(!laborMode){ if(net<=-0.11)npcSay(pick(LINES.crash),"shock",3.2); else if(net<-0.001)npcSay(pick(hitHeld?LINES.badHeld:LINES.bad),"worried",2.6); else if(net>0.001)npcSay(pick(hitHeld?LINES.goodHeld:LINES.good),"happy",2.4); }
+}
+
+// ---------- 작전세력 ----------
+function pickCartelTarget(){
+  const cand=STOCKS.filter(s=>s.status==="listed");
+  if(Math.random()<0.6){ let m=cand[0]; for(const s of cand) if(s.sh*s.px<m.sh*m.px) m=s; return m; }
+  return pick(cand);
+}
+function startCartel(s,mode){
+  cartel={s,mode,t:(mode==="pump"?3.5+Math.random()*2:3+Math.random()*2)};
+  if(mode==="pump"){ addTick("🕵️ "+s.name+"에 수상한 대량 매수… 작전 세력 침투 의심!","n-mix"); if(!laborMode)npcSay(pick(LINES.cartel),"excited",3); }
+  else{ addTick("🚨 "+s.name+" 작전 세력 이탈! 물량 폭탄 투하!","n-down"); if(!laborMode)npcSay("작전 세력이 튀었어요! 조심!","shock",3); }
+  beep(mode==="pump"?300:520,0.3,"sawtooth",0.06,mode==="pump"?760:120);
+}
+
+// ---------- 신규 상장 / 기업 이벤트 ----------
+function tryIPO(){
+  if(STOCKS.length>=MAXCHARTS || !extraAvail.length) return;
+  const def=extraAvail.splice(Math.floor(Math.random()*extraAvail.length),1)[0];
+  const s=makeStock(def,false); s.status="pending"; s.evt={type:"ipo",t:2.6}; // 상장 대기 후 거래 시작
+  STOCKS.push(s); makeCard(s); relayoutGrid();
+  addTick("🆕 신규 상장 예정! "+s.name+"("+s.tkr+") 곧 거래 시작 — 초기 변동성 주의","n-mix");
+  if(!laborMode)npcSay(pick(LINES.ipo),"excited",3.2); beep(520,0.3,"triangle",0.05,880);
+}
+function startCompanyEvent(s){
+  if(Math.random()<0.5){
+    s.status="suspended"; s.evt={type:"suspend",t:7+Math.random()*7};
+    addTick("🔍 "+s.name+"("+s.tkr+") 거래정지 — "+pick(SUSPEND_REASONS)+" 조사 착수","n-mix");
+    if(!laborMode)npcSay(pick(LINES.suspend),"worried",3); flashCard(s);
+  } else {
+    const partner=pick(CORE); s.evt={type:"merger",t:9+Math.random()*7,partner};
+    s.px*=1.08; s.shock+=0.15;
+    addTick("💍 "+s.name+", 대기업 "+partner.name+"와(과) 합병 추진설… 주가 급등!","n-up");
+    if(!laborMode)npcSay(pick(LINES.merger),"excited",3); flashCard(s);
+  }
+}
+function resolveCompanyEvent(s){
+  const e=s.evt; s.evt=null;
+  if(e.type==="ipo"){                              // 상장 대기 → 거래 시작
+    s.status="listed"; s.evtCd=16+Math.random()*18; if(s.ui)s.ui.card.classList.remove("ipo");
+    addTick("🔔 "+s.name+"("+s.tkr+") 거래 시작!","n-up");
+    if(!laborMode)npcSay("새 종목 거래가 시작됐어요!","excited",2.6); beep(660,0.2,"triangle",0.05,990); flashCard(s); return;
+  }
+  if(e.type==="suspend"){
+    if(Math.random()<0.45){
+      addTick("🚨 "+s.name+" 상장폐지! 주가 조작·분식 적발 — 주주 전액 손실","n-down");
+      if(!laborMode)npcSay(pick(LINES.delist),"shock",3.4); beep(180,0.6,"sawtooth",0.09,70); delistStock(s);
+    } else {
+      s.status="listed"; s.evtCd=18+Math.random()*22; const good=Math.random()<0.5; s.px*=good?1.05:0.95;
+      addTick("✅ "+s.name+" 거래 재개 — 조사 결과 "+(good?"이상無, 소폭 반등":"경미한 제재"),"n-mix"); flashCard(s);
+    }
+  } else {
+    if(Math.random()<0.4){
+      const pay=Math.round(s.sh*s.px);
+      if(pay>0){ cash+=pay; addTick("🎉 합병 성사! "+s.name+" 주식 → "+e.partner.name+"로 환산 지급 (주가 보전 +"+fmtMoney(pay)+")","n-up"); }
+      else addTick("🎉 "+s.name+"-"+e.partner.name+" 합병 성사! "+s.name+" 상장폐지","n-up");
+      if(!laborMode)npcSay(pick(LINES.mergerWin),"happy",3.4); beep(660,0.5,"triangle",0.08,990); delistStock(s);
+    } else {
+      s.evtCd=18+Math.random()*22; s.px*=0.72; s.shock-=0.2;
+      addTick("💔 "+s.name+"-"+e.partner.name+" 합병 무산! 주가 폭락","n-down");
+      if(!laborMode)npcSay(pick(LINES.mergerFail),"sad",3.2); beep(240,0.5,"sawtooth",0.08,90); flashCard(s);
+    }
+  }
+}
+function delistStock(s){
+  s.sh=0; s.avg=0;
+  if(cartel&&cartel.s===s)cartel=null; if(pendingDump===s)pendingDump=null; if(cartelTarget===s)cartelTarget=null;
+  const i=STOCKS.indexOf(s); if(i>=0)STOCKS.splice(i,1);
+  if(s.ui&&s.ui.card.parentNode) s.ui.card.remove();
+  relayoutGrid();
+}
+
+// ---------- 휴장 / 갭 ----------
+function endOpenDay(){ daysUntilHoliday--; sol++; if(daysUntilHoliday<=0) enterHoliday(); else{ phaseT=DAY_LEN; addTick("🔔 SOL "+sol+" 개장","n-amb"); } }
+function enterHoliday(){
+  phase="closed"; phaseT=HOLIDAY_LEN; holidayLog=0; holidayNewsT=0.8; STOCKS.forEach(s=>s.gap=0);
+  holidayTheme=pick(HOLIDAY_THEMES); cartelTarget=holidayTheme.cartel?pickCartelTarget():null;
+  addTick(holidayTheme.n+" — "+holidayTheme.d,"n-mix"); beep(400,0.4,"sine",0.05,240); setBgmMode("tense");
+  if(!laborMode)npcSay(pick(LINES.holiday),"sleepy",4);
+}
+function fireHolidayNews(){
+  holidayLog++;
+  if(cartelTarget && cartelTarget.status==="listed" && Math.random()<0.6){
+    const p=0.07+Math.random()*0.11; cartelTarget.gap=clamp(cartelTarget.gap+p,-0.5,0.9);
+    addTick("🌙(장외) "+cartelTarget.name+" 대량 매집 포착… 개장 초 급등 조짐!","n-up");
+  } else {
+    const n=pick(HOLIDAY_NEWS); let net=0;
+    n.fx.forEach(([idx,pct])=>{ fxStocks(idx).forEach(s=>{ s.gap=clamp(s.gap+pct,-0.5,0.9); }); net+=pct; });
+    addTick("🌙(장외) "+n.t,net>0.001?"n-up":net<-0.001?"n-down":"n-mix");
+  }
+}
+function reopen(){
+  const moved=[]; let held=0;
+  for(const s of STOCKS){ if(s.status!=="listed"||!s.gap)continue;
+    const f=Math.exp(s.gap), old=s.px; s.px*=f; if(s.px<FLOOR)s.px=FLOOR;
+    s.hist.push(s.px); if(s.hist.length>HIST)s.hist.shift(); s.flash=1; held+=s.sh*(s.px-old);
+    const p=(f-1)*100; if(Math.abs(p)>2) moved.push({s,p}); s.gap=0;
+  }
+  moved.sort((a,b)=>Math.abs(b.p)-Math.abs(a.p));
+  revealMovers = moved.length ? moved.slice(0,6).map(m=>`<span class="${m.p>=0?'up':'down'}">${m.s.tkr} ${m.p>=0?'▲':'▼'}${Math.abs(m.p).toFixed(0)}%</span>`).join("&nbsp;&nbsp;")
+    : "<span class='n-amb'>큰 변동 없이 잠잠하게 개장</span>";
+  phase="open"; phaseT=DAY_LEN; sol++; daysUntilHoliday=HOLIDAY_CADENCE; revealT=2.8;
+  newsQueue=[]; refillQueue(); insiderTips=[]; insiderDirty=true; setBgmMode("hope");
+  if(held>1){ beep(523,0.5,"triangle",0.08,784); if(!laborMode)npcSay(pick(LINES.gapUp),"excited",3.2); }
+  else if(held<-1){ beep(300,0.6,"sawtooth",0.09,110); if(!laborMode)npcSay(pick(LINES.gapDown),"sad",3.2); }
+  else beep(440,0.2,"sine",0.05);
+  if(holidayTheme&&holidayTheme.cartel&&cartelTarget){ pendingDump=cartelTarget; pendingDumpT=2.6; }
+  flashCards();
+}
+
+// ---------- 자동 채광기 ----------
+function ownedCount(mo){ let w=0,d=0; for(const m of miners) if(m.model===mo){ if(m.status==="work")w++; else d++; } return {w,d}; }
+function updateMiners(dt){
+  let rate=0, remove=null;
+  for(const m of miners){
+    if(m.status==="work"){ rate+=m.model.rate;
+      if(Math.random()<m.model.defect*dt){ if(Math.random()<m.model.as){ m.status="down"; m.cd=2.5+Math.random()*4; } else { (remove=remove||[]).push(m); } }
+    } else { m.cd-=dt; if(m.cd<=0) m.status="work"; }
+  }
+  cash+=rate*dt; autoRate=rate;
+  if(remove){ remove.forEach(m=>{ const i=miners.indexOf(m); if(i>=0)miners.splice(i,1); });
+    addTick("💥 "+remove[0].model.name+" 불량 발생! AS 미보장 — "+remove.length+"대 폐기 (투자금 손실)","n-down");
+    if(laborMode)warnLabor("💥 채광기 "+remove.length+"대 고장! 폐기…",false); else npcSay(pick(LINES.minerBreak),"worried",3); shopDirty=true; }
+}
+function minerEvent(){
+  const r=Math.random();
+  if(limitedAvailT<=0 && r<0.3){ limitedAvailT=45; shopDirty=true;
+    addTick("🆕 [신제품] '"+LIMITED_MODEL.name+"' 한정 판매 개시! 광산 상점에서 확인","n-mix"); if(!laborMode)npcSay("한정판 채광기가 나왔대요! 서두르세요~","excited",3);
+  } else if(miners.length && r<0.62){
+    const mo=pick(miners).model; let d=0,x=0;
+    for(let i=miners.length-1;i>=0;i--){ const m=miners[i]; if(m.model!==mo)continue;
+      if(Math.random()<0.6){ if(Math.random()<m.model.as){ m.status="down"; m.cd=3+Math.random()*4; d++; } else { miners.splice(i,1); x++; } } }
+    addTick("📢 [리콜] '"+mo.name+"' 대량 결함 발견! "+(x?x+"대 폐기·":"")+(d?d+"대 정비":"")+" 사태","n-down");
+    if(laborMode)warnLabor("📢 리콜 사태!",false); shopDirty=true;
+  } else { addTick(pick(MINER_FLAVOR),"n-amb"); }
+}
+function buyMiner(id){
+  if(state!=="play")return; const mo=id===99?LIMITED_MODEL:MINER_MODELS[id];
+  if(mo.limited && (limitedAvailT<=0 || miners.some(m=>m.model===mo))) return;
+  if(cash<mo.price) return; cash-=mo.price; miners.push({model:mo,status:"work",cd:0}); shopDirty=true;
+  beep(700,0.14,"triangle",0.05,1000); if(laborMode)warnLabor("⚙️ "+mo.name+" 가동 시작!",true);
+}
+function renderShop(){
+  const list=MINER_MODELS.slice(); if(limitedAvailT>0) list.push(LIMITED_MODEL);
+  const shop=document.getElementById("shop");
+  let html='<h3>⚙️ 자동 채광기 상점</h3><div class="sub">사두면 안 눌러도 자동으로 벌어요. 여러 대 구매 가능! 단 <b style="color:var(--down)">불량</b> 나면 AS(★)가 낮을수록 폐기(돈 손실). 비싸도 AS 좋은 게 이득.</div>';
+  list.forEach(mo=>{
+    const o=ownedCount(mo), stars="★".repeat(Math.round(mo.as*5))+"☆".repeat(5-Math.round(mo.as*5));
+    const limClosed=mo.limited&&miners.some(m=>m.model===mo);
+    const dis=(cash<mo.price)||limClosed;
+    html+=`<div class="mCard${mo.limited?' lim':''}"><div class="mh">${mo.emoji} ${mo.name}<span class="as">AS ${stars}</span></div>`+
+      `<div class="mi">수입 +$${mo.rate}/s · 가격 ${fmtMoney(mo.price)}${mo.limited?" · 🔒한정1":""}</div>`+
+      `<div class="mi">보유 <span class="own">${o.w}대 가동</span>${o.d?' · <span class="down">'+o.d+'대 정비중</span>':''}</div>`+
+      `<button data-buy="${mo.id}"${dis?' disabled':''}>${limClosed?'구매 완료':'구매 '+fmtMoney(mo.price)}</button></div>`;
+  });
+  shop.innerHTML=html;
+}
+document.getElementById("shop").addEventListener("click",e=>{ const b=e.target.closest("button[data-buy]"); if(b)buyMiner(+b.dataset.buy); });
+
+// ---------- 시뮬레이션 ----------
+function sim(dt){
+  simTime+=dt;
+  if(revealT>0) revealT-=dt;                 // 개장 배너 자동 사라짐
+  if(debt>0) debt*=Math.exp(DEBT_RATE*dt);
+  updateMiners(dt);
+  minerEventCd-=dt; if(minerEventCd<=0){ minerEvent(); minerEventCd=20+Math.random()*24; }
+  if(limitedAvailT>0){ limitedAvailT-=dt; if(limitedAvailT<=0)shopDirty=true; }
+  if(phase==="open") simOpen(dt); else simClosed(dt);
+  const nw=netWorth(); if(nw>best)best=nw; if(nw<100){ gameOver(); return; }
+}
+function simOpen(dt){
+  phaseT-=dt; if(phaseT<=0){ endOpenDay(); return; }
+  // 신규 상장
+  ipoCd-=dt; if(ipoCd<=0){ ipoCd=28+Math.random()*30; tryIPO(); }
+  // 기업 이벤트
+  for(const s of STOCKS){ if(s.big)continue;
+    if(s.evt){ s.evt.t-=dt; if(s.evt.t<=0){ resolveCompanyEvent(s); break; } }
+    else if(s.status==="listed"){ s.evtCd-=dt; if(s.evtCd<=0){ s.evtCd=1e9; startCompanyEvent(s); } } }
+  // 작전세력
+  if(pendingDump){ pendingDumpT-=dt; if(pendingDumpT<=0){ if(pendingDump.status==="listed")startCartel(pendingDump,"dump"); pendingDump=null; } }
+  if(cartel){ cartel.t-=dt;
+    if(cartel.t<=0){ if(cartel.mode==="pump")startCartel(cartel.s,"dump"); else{ addTick("작전 종료. "+cartel.s.name+" 개미들의 곡소리…","n-amb"); cartel=null; cartelCd=22+Math.random()*24; } } }
+  else { cartelCd-=dt; if(cartelCd<=0){ const c=STOCKS.filter(s=>s.status==="listed"); if(c.length)startCartel(pick(c),"pump"); else cartelCd=8; } }
+  // 뉴스
+  newsTimer-=dt; if(newsTimer<=0){ fireNews(); newsTimer=4+Math.random()*4; }
+  // 가격
+  const nw=Math.max(netWorth(),1);
+  for(const s of STOCKS){ if(s.status!=="listed")continue;
+    s.regT-=dt; if(s.regT<=0){ s.reg=randn()*0.0032+s.dm; s.regT=11+Math.random()*15; }
+    const heat=clamp(s.sh*s.px/nw,0,1); let mu=s.reg-DRAG_K*heat+s.shock;
+    if(cartel&&cartel.s===s) mu+=cartel.mode==="pump"?0.16:-0.22;
+    if(s.evt&&s.evt.type==="merger") mu+=0.05;
+    s.px*=Math.exp((mu-0.5*s.sig*s.sig)*dt+s.sig*Math.sqrt(dt)*randn());
+    if(s.px<FLOOR)s.px=FLOOR; s.shock*=Math.exp(-0.9*dt); if(s.flash>0)s.flash-=dt*1.6;
+  }
+  sample(dt);
+}
+function simClosed(dt){
+  phaseT-=dt; if(phaseT<=0){ reopen(); return; }
+  holidayNewsT-=dt; if(holidayNewsT<=0){ fireHolidayNews(); holidayNewsT=1.0+Math.random()*1.3; }
+  for(const s of STOCKS){ if(s.flash>0)s.flash-=dt*1.6; }
+  sample(dt);
+}
+function sample(dt){ sampT+=dt; if(sampT>=SAMPLE){ sampT-=SAMPLE; for(const s of STOCKS){ s.hist.push(s.px); if(s.hist.length>HIST)s.hist.shift(); } } }
+
+// ---------- 거래 ----------
+function buy(s){ if(!tradable(s))return; const p=s.px; if(cash<p)return; cash-=p; s.avg=(s.avg*s.sh+p)/(s.sh+1); s.sh++; s.px*=1.0008; beep(520,0.05,"square",0.04,640); }
+function sell(s){ if(!tradable(s))return; if(s.sh<=0)return; s.sh--; cash+=s.px; s.px*=0.9992; if(s.sh===0)s.avg=0; beep(420,0.05,"square",0.04,320); }
+function holdRepeat(btn,fn){ let iv=null,to=null; const stop=()=>{clearTimeout(to);clearInterval(iv);to=iv=null;};
+  btn.addEventListener("pointerdown",e=>{ e.preventDefault(); stop(); if(btn.disabled)return; fn();  // stop() 먼저 → 이전 타이머 누수 방지
+    to=setTimeout(()=>{ iv=setInterval(()=>{ if(btn.disabled){stop();return;} fn(); },70); },260); });
+  ["pointerup","pointerleave","pointercancel"].forEach(ev=>btn.addEventListener(ev,stop)); }
+function flashCard(s){ if(!s.ui)return; const c=s.ui.card; c.classList.remove("flash"); void c.offsetWidth; c.classList.add("flash"); }
+function flashCards(){ for(const s of STOCKS) flashCard(s); }
+
+// ---------- 대출 ----------
+function borrow(){ if(state!=="play")return; if(debt+LOAN_STEP>MAX_DEBT)return; cash+=LOAN_STEP; debt+=LOAN_STEP; beep(300,0.12,"sine",0.05,180); if(!laborMode)npcSay(pick(LINES.loan),"worried",3); }
+function repay(){ if(state!=="play")return; const amt=Math.min(LOAN_STEP,debt,cash); if(amt<=0)return; cash-=amt; debt-=amt; beep(700,0.1,"sine",0.05,900); }
+function repayAll(){ if(state!=="play")return; const amt=Math.min(debt,cash); if(amt<=0)return; cash-=amt; debt-=amt; beep(760,0.14,"sine",0.05,1000); }
+
+// ---------- 밀거래 ----------
+function insiderCost(){ return Math.max(500,Math.round(netWorth()*0.03)); }
+function buyInsider(){ if(state!=="play"||laborMode)return; if(insiderTips.length>0)return; const c=insiderCost(); if(cash<c)return;
+  cash-=c; insiderTips=newsQueue.slice(0,3); insiderDirty=true; beep(880,0.12,"triangle",0.05,1200); npcSay(pick(LINES.insider),"happy",3.4); }
+function rebuildTips(){
+  const box=document.getElementById("tips");
+  if(insiderTips.length===0){ box.innerHTML='<div class="tipsEmpty">돈을 내면 <b>다음에 나올 뉴스</b> 3개를 미리 볼 수 있어요.<br>단, <b>언제</b> 나올지는 아무도 몰라요…</div>'; return; }
+  box.innerHTML=insiderTips.map(n=>{ const net=n.fx.reduce((a,f)=>a+f[1],0); const cls=net>0.001?"up":net<-0.001?"down":"mix", arw=net>0.001?"▲ 호재":net<-0.001?"▼ 악재":"⚡ 혼조";
+    const tg=n.fx.map(f=>f[0]===A?"전체":(CORE[f[0]]?CORE[f[0]].tkr:"?")).join(",");
+    return `<div class="tip ${cls}"><span class="hd">🔮 곧… [${tg}] ${arw}</span><br><span class="tt">${n.t}</span></div>`; }).join("");
+}
+
+// ---------- 노동 / 채광 ----------
+const laborOv=document.getElementById("laborOv"), mineArea=document.getElementById("mineArea"), oreVein=document.getElementById("oreVein"), laborWarn=document.getElementById("laborWarn");
+let oreCoolT=null;
+function enterLabor(){ if(state!=="play")return; laborMode=true; laborSession=0; laborOv.classList.add("on"); scatterRocks(); moveOre(); shopDirty=true; renderShop(); updateLaborStats(); }
+function exitLabor(){ laborMode=false; laborOv.classList.remove("on"); if(state==="play"){ npcSay(pick(LINES.backFromWork),"neutral",3.2); flashCards(); } }
+function scatterRocks(){ [...mineArea.querySelectorAll(".rock")].forEach(r=>r.remove()); const em=["🪨","⛰️","🌑","🔶"];
+  for(let k=0;k<7;k++){ const r=document.createElement("div"); r.className="rock"; r.textContent=pick(em); r.style.left=(5+Math.random()*84)+"%"; r.style.top=(12+Math.random()*72)+"%"; mineArea.appendChild(r); } }
+function moveOre(){ oreVein.style.left=(6+Math.random()*70)+"%"; oreVein.style.top=(14+Math.random()*56)+"%"; oreVein.textContent=Math.random()<0.16?"🌟":"💎"; }
+function mineHit(){
+  if(state!=="play")return; const now=(window.performance&&performance.now)?performance.now():last*1000;
+  if(now-lastMine<MIN_MINE_MS){ warnLabor("⛏️ 너무 빨라요! (오토 금지)",false); return; } lastMine=now;
+  const big=oreVein.textContent==="🌟"||Math.random()<0.1;
+  const gain=Math.round(perClick*(big?3:1)*(0.85+Math.random()*0.5));
+  cash+=gain; laborSession+=gain; laborClicks++;
+  spawnFloater("+$"+gain,big?"big":""); if(big)warnLabor("💎 노다지! +$"+gain,true);
+  if(laborClicks%15===0){ perClick=Math.min(30,perClick+1.5); warnLabor("⛏️ 시급 인상! 단가 +$1.5",true); }
+  beep(big?900:1100,0.05,"square",0.05,big?1400:700); sfxNoise(0.04,0.04);
+  oreVein.classList.remove("hit"); void oreVein.offsetWidth; oreVein.classList.add("hit");
+  mineArea.classList.remove("shake"); void mineArea.offsetWidth; mineArea.classList.add("shake");
+  document.getElementById("mineHint").style.opacity=".0";
+  oreVein.classList.add("cool"); clearTimeout(oreCoolT); oreCoolT=setTimeout(()=>oreVein.classList.remove("cool"),MIN_MINE_MS);
+  moveOre(); updateLaborStats();
+}
+function spawnFloater(text,cls){ const f=document.createElement("div"); f.className="floater"+(cls?" "+cls:""); f.textContent=text;
+  const r=oreVein.getBoundingClientRect(), a=mineArea.getBoundingClientRect(); f.style.left=(r.left-a.left+r.width/2)+"px"; f.style.top=(r.top-a.top)+"px";
+  mineArea.appendChild(f); setTimeout(()=>f.remove(),900); }
+function warnLabor(text,good){ laborWarn.textContent=text; laborWarn.className="laborWarn"+(good?" good":""); void laborWarn.offsetWidth; laborWarn.classList.add("show"); }
+function updateLaborStats(){ document.getElementById("lcash").textContent=fmtMoney(cash);
+  document.getElementById("lsession").textContent="+"+fmtMoney(laborSession);
+  document.getElementById("lrate").textContent="$"+perClick.toFixed(1);
+  document.getElementById("llv").textContent="Lv."+(1+Math.floor(laborClicks/15));
+  document.getElementById("lauto").textContent="$"+autoRate.toFixed(1)+"/s"; }
+oreVein.addEventListener("pointerdown",e=>{ e.preventDefault(); mineHit(); });
+
+// ---------- 캔버스 ----------
+let DPR=1;
+function sizeCanvases(){ DPR=Math.min(2,window.devicePixelRatio||1);
+  for(const s of STOCKS){ if(!s.ui)continue; const cv=s.ui.cv,r=cv.getBoundingClientRect();
+    const w=Math.max(2,Math.floor(r.width)),h=Math.max(2,Math.floor(r.height)); s.ui.cw=w; s.ui.ch=h;
+    cv.width=Math.floor(w*DPR); cv.height=Math.floor(h*DPR); s.ui.ctx.setTransform(DPR,0,0,DPR,0,0); } }
+addEventListener("resize",()=>{ relayoutGrid(); });
+const _vars={}; function getVar(n){ if(!_vars[n])_vars[n]=getComputedStyle(document.documentElement).getPropertyValue(n).trim(); return _vars[n]; }
+function drawChart(s){
+  const u=s.ui; if(!u)return; const ctx=u.ctx,cw=u.cw,ch=u.ch; if(cw<2||ch<2)return;
+  ctx.clearRect(0,0,cw,ch); const h=s.hist,n=h.length,live=s.px; let lo=live,hi=live;
+  for(let k=0;k<n;k++){ const v=h[k]; if(v<lo)lo=v; if(v>hi)hi=v; }
+  if(hi-lo<1e-6){hi+=1;lo-=1;} const pd=(hi-lo)*0.12; hi+=pd; lo-=pd;
+  const pL=6,pR=8,pT=8,pB=8,pw=cw-pL-pR,phh=ch-pT-pB; const X=k=>pL+(k/n)*pw, Y=v=>pT+(1-(v-lo)/(hi-lo))*phh;
+  ctx.strokeStyle="rgba(255,180,140,0.07)"; ctx.lineWidth=1; ctx.beginPath();
+  for(let g=1;g<3;g++){ const yy=pT+phh*g/3; ctx.moveTo(pL,yy); ctx.lineTo(cw-pR,yy); } ctx.stroke();
+  if(s.sh>0 && s.avg>lo && s.avg<hi){ const yy=Y(s.avg); ctx.setLineDash([4,4]); ctx.strokeStyle="rgba(255,207,107,0.55)"; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(pL,yy); ctx.lineTo(cw-pR,yy); ctx.stroke(); ctx.setLineDash([]); }
+  const up=live>=h[0], col=up?getVar("--up"):getVar("--down");
+  ctx.beginPath(); ctx.moveTo(X(0),Y(h[0])); for(let k=1;k<n;k++)ctx.lineTo(X(k),Y(h[k])); ctx.lineTo(X(n),Y(live));
+  ctx.lineTo(X(n),pT+phh); ctx.lineTo(X(0),pT+phh); ctx.closePath(); ctx.fillStyle=up?"rgba(63,240,138,0.10)":"rgba(255,90,106,0.10)"; ctx.fill();
+  ctx.beginPath(); ctx.moveTo(X(0),Y(h[0])); for(let k=1;k<n;k++)ctx.lineTo(X(k),Y(h[k])); ctx.lineTo(X(n),Y(live));
+  ctx.strokeStyle=col; ctx.lineWidth=1.8; ctx.stroke();
+  ctx.fillStyle=col; ctx.beginPath(); ctx.arc(X(n),Y(live),2.6,0,6.2832); ctx.fill();
+  if(s.flash>0){ ctx.fillStyle="rgba(255,255,255,"+(0.12*s.flash)+")"; ctx.fillRect(0,0,cw,ch); }
+  if(s.status==="pending"||s.status==="suspended"||phase==="closed"){
+    ctx.fillStyle="rgba(10,4,3,0.58)"; ctx.fillRect(0,0,cw,ch);
+    ctx.fillStyle="rgba(255,150,100,0.95)"; ctx.font="bold 13px 'Segoe UI',sans-serif"; ctx.textAlign="center"; ctx.textBaseline="middle";
+    const label=s.status==="pending"?"⏳ 상장 대기":s.status==="suspended"?"🔍 거래정지":"🚫 휴장";
+    ctx.fillText(label,cw/2,ch/2); ctx.textAlign="left"; ctx.textBaseline="alphabetic";
+  }
+}
+
+// ---------- HUD ----------
+function renderUI(){
+  const eq=equity(), nw=cash+eq-debt, pl=(nw-START_CASH)/START_CASH*100;
+  document.getElementById("cash").textContent=fmtMoney(cash);
+  document.getElementById("equity").textContent=fmtMoney(eq);
+  document.getElementById("netv").textContent=fmtMoney(nw);
+  const plv=document.getElementById("plv"); plv.textContent=(pl>=0?"+":"")+pl.toFixed(1)+"%";
+  document.getElementById("pl").className="stat "+(pl>=0?"up":"down");
+  document.getElementById("net").className="stat "+(nw>=START_CASH?"up":"down");
+  document.getElementById("debtv").textContent=fmtMoney(debt);
+  const solEl=document.getElementById("sol"), ring=document.getElementById("dayRing"), hc=document.getElementById("holiCount");
+  solEl.textContent=(phase==="closed"?"🌙 SOL ":"SOL ")+sol; solEl.style.color=phase==="closed"?"var(--mars)":"";
+  if(phase==="closed"){ ring.classList.add("rest"); hc.textContent="개장까지 "+Math.max(0,Math.ceil(phaseT))+"s"; hc.style.color="var(--mars)"; }
+  else{ ring.classList.remove("rest"); const deg=Math.round((1-phaseT/DAY_LEN)*360);
+    ring.style.background="conic-gradient(var(--mars) "+deg+"deg,#3a1f18 0deg)";
+    hc.textContent="휴장 D-"+daysUntilHoliday; hc.style.color=daysUntilHoliday<=1?"var(--mars)":"var(--gold)"; }
+  if(laborMode){ updateLaborStats(); if(shopDirty){ renderShop(); shopDirty=false; } return; }
+  for(const s of STOCKS){ const u=s.ui; if(!u)continue; const p=s.px,base=s.hist[0];
+    u.price.textContent=fmtPx(p); const chg=(p-base)/base*100; u.chg.textContent=(chg>=0?"▲":"▼")+Math.abs(chg).toFixed(1)+"%"; u.chg.className="cchg "+(chg>=0?"up":"down");
+    if(s.status==="pending"){ u.hold.innerHTML="<span style='color:var(--gold)'>⏳ 상장 대기중… 곧 거래 시작</span>"; }
+    else if(s.status==="suspended"){ u.hold.innerHTML="<span style='color:var(--mars)'>🔍 조사중 (거래정지)</span>"; }
+    else if(s.sh>0){ const val=s.sh*p, gain=val-s.avg*s.sh, gp=(p-s.avg)/s.avg*100, cl=gain>=0?"up":"down";
+      u.hold.innerHTML=`<b>${s.sh}</b>주 · 평단 ${fmtPx(s.avg)} · <span class="${cl}">${gain>=0?'+':''}${fmtMoney(gain)} (${gp>=0?'+':''}${gp.toFixed(1)}%)</span>`; }
+    else u.hold.innerHTML="<span style='color:var(--dimmer)'>미보유</span>";
+    u.buy.disabled=!tradable(s)||cash<p; u.sell.disabled=!tradable(s)||s.sh<=0;
+  }
+}
+function renderSidebar(){
+  document.getElementById("rateLbl").textContent="이자 ≈2%/SOL";
+  document.getElementById("bkDebt").textContent=fmtMoney(debt);
+  document.getElementById("bkAuto").textContent="$"+autoRate.toFixed(1)+"/s";
+  document.getElementById("borrowBtn").disabled=state!=="play"||debt+LOAN_STEP>MAX_DEBT;
+  document.getElementById("repayBtn").disabled=state!=="play"||debt<=0||cash<=0;
+  document.getElementById("repayAllBtn").disabled=state!=="play"||debt<=0||cash<=0;
+  document.getElementById("laborBtn").disabled=state!=="play";
+  const ib=document.getElementById("insiderBtn");
+  if(insiderTips.length>0){ ib.textContent="🔮 정보 활성 ("+insiderTips.length+")"; ib.disabled=true; }
+  else{ const c=insiderCost(); ib.textContent="🔮 정보 구매 ("+fmtMoney(c)+")"; ib.disabled=state!=="play"||cash<c; }
+  if(insiderDirty){ rebuildTips(); insiderDirty=false; }
+}
+function renderHalt(){
+  const el=document.getElementById("halt"),box=document.getElementById("haltBox");
+  if(phase==="closed"){ el.classList.add("on");
+    const hint=holidayLog>=4?"🔥 시장이 심상치 않게 들썩입니다…":holidayLog>=2?"📡 소문이 퍼지고 있어요…":"";
+    box.innerHTML=`<h2>${holidayTheme.n}</h2><div class="d">${holidayTheme.d}</div><div class="cd">다음 개장까지 ⌛ ${Math.ceil(phaseT)}s · 장외 속보 ${holidayLog}건</div>`+(hint?`<div class="d" style="color:var(--gold)">${hint}</div>`:"");
+  } else if(revealT>0){ el.classList.add("on"); box.innerHTML=`<h2>🔔 개장!</h2><div class="movers">${revealMovers}</div>`; }
+  else el.classList.remove("on");
+}
+
+// ---------- 티커 ----------
+const ticker=document.getElementById("ticker"); let tickX=0;
+function addTick(text,cls){ const sp=document.createElement("span"); sp.className=cls||"n-amb"; sp.textContent=text; ticker.appendChild(sp); sp.__w=sp.offsetWidth; while(ticker.children.length>40)ticker.removeChild(ticker.firstElementChild); }
+function clearTicker(){ ticker.innerHTML=""; tickX=0; ticker.style.transform="translateX(0)"; }
+function updateTicker(dt){
+  const rightEdge=tickX+ticker.scrollWidth, backlog=rightEdge-window.innerWidth;   // 화면 오른쪽 밖에 대기 중인 양
+  const speed=52*(1+Math.min(4,Math.max(0,backlog)/650));                          // 기본 느리게, 밀릴 때만 최대 ~5배 가속
+  tickX-=speed*dt; const first=ticker.firstElementChild;
+  if(first){ const fw=first.__w||first.offsetWidth; if(tickX+fw<-30){ ticker.removeChild(first); tickX+=fw; } }
+  ticker.style.transform="translateX("+tickX+"px)"; if(rightEdge<window.innerWidth+240)addTick(pick(AMBIENT),"n-amb"); }
+
+// ---------- 오디오 ----------
+let AC=null,muted=false;
+function beep(freq,dur,type,vol,slideTo){ if(muted)return; try{ AC=AC||new (window.AudioContext||window.webkitAudioContext)();
+  const o=AC.createOscillator(),g=AC.createGain(),t=AC.currentTime; o.type=type||"square"; o.frequency.setValueAtTime(freq,t);
+  if(slideTo)o.frequency.exponentialRampToValueAtTime(slideTo,t+dur); g.gain.setValueAtTime(vol||0.05,t); g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+  o.connect(g); g.connect(AC.destination); o.start(t); o.stop(t+dur);}catch(e){} }
+function sfxNoise(dur,vol){ if(muted||!AC)return; try{ const n=Math.floor(AC.sampleRate*dur),buf=AC.createBuffer(1,n,AC.sampleRate),d=buf.getChannelData(0);
+  for(let i=0;i<n;i++)d[i]=(Math.random()*2-1)*(1-i/n); const s=AC.createBufferSource(),g=AC.createGain(); s.buffer=buf; g.gain.value=vol; s.connect(g); g.connect(AC.destination); s.start();}catch(e){} }
+
+// ---------- 8bit BGM ----------
+const BPM=126, STEP_DUR=60/BPM/2; const mf=m=>440*Math.pow(2,(m-69)/12);
+const CHORDS=[{b:45,arp:[57,60,64,69]},{b:41,arp:[53,57,60,65]},{b:48,arp:[60,64,67,72]},{b:43,arp:[55,59,62,67]}];
+let bgmMode="off",bgmTimer=null,nextNote=0,bStep=0,bChord=0;
+function bTone(freq,start,dur,type,vol){ if(muted)return; const o=AC.createOscillator(),g=AC.createGain(); o.type=type; o.frequency.setValueAtTime(freq,start);
+  g.gain.setValueAtTime(0.0001,start); g.gain.exponentialRampToValueAtTime(vol,start+0.012); g.gain.exponentialRampToValueAtTime(0.0001,start+dur);
+  o.connect(g); g.connect(AC.destination); o.start(start); o.stop(start+dur+0.02); }
+function bNoise(start,dur,vol){ if(muted)return; const n=Math.floor(AC.sampleRate*dur),buf=AC.createBuffer(1,n,AC.sampleRate),d=buf.getChannelData(0);
+  for(let i=0;i<n;i++)d[i]=(Math.random()*2-1)*(1-i/n); const s=AC.createBufferSource(),g=AC.createGain(); s.buffer=buf; g.gain.value=vol; s.connect(g); g.connect(AC.destination); s.start(start); }
+function bgmStep(t){ const c=CHORDS[bChord];
+  if(bgmMode==="hope"){ bTone(mf(c.arp[bStep%4]),t,STEP_DUR*0.9,"square",0.045);
+    if(bStep%4===0) bTone(mf(c.b),t,STEP_DUR*1.9,"triangle",0.085);
+    if(bStep===0||bStep===4){ bTone(70,t,0.12,"sine",0.11); bNoise(t,0.03,0.045); }
+    if(bStep%2===1) bNoise(t,0.02,0.022);
+  } else { bNoise(t,0.015,0.03); if(bStep%2===0) bTone(mf(45),t,0.18,"triangle",0.055); if(bStep%4===2) bTone(mf(51+(bStep%8===6?1:0)),t,0.14,"square",0.032); } }
+function bgmSched(){ if(!AC||bgmMode==="off")return; while(nextNote<AC.currentTime+0.14){ bgmStep(nextNote); nextNote+=STEP_DUR; bStep++; if(bStep>=8){bStep=0;bChord=(bChord+1)%CHORDS.length;} } }
+function startBGM(mode){ try{ AC=AC||new (window.AudioContext||window.webkitAudioContext)(); if(AC.resume)AC.resume(); }catch(e){ return; } bgmMode=mode; if(nextNote<AC.currentTime)nextNote=AC.currentTime+0.06; if(!bgmTimer)bgmTimer=setInterval(bgmSched,25); }
+function setBgmMode(m){ bgmMode=m; }
+function stopBGM(){ bgmMode="off"; }
+document.getElementById("mute").addEventListener("click",e=>{ muted=!muted; e.target.textContent=muted?"🔇":"🔊"; });
+
+// ---------- NPC 마리 ----------
+const NPC_GROUPS=["eyesOpen","eyesHappy","eyesWide","eyesSleepy","browNeutral","browUp","browWorried","mouthNeutral","mouthSmile","mouthOpen","mouthOpenO","mouthFrown","blush","sweat","surprise","tear","zzz","sparkle"];
+const MOODS={ neutral:{e:"eyesOpen",b:"browNeutral",m:"mouthNeutral",x:[]}, happy:{e:"eyesHappy",b:"browNeutral",m:"mouthSmile",x:["blush"]},
+  excited:{e:"eyesWide",b:"browUp",m:"mouthOpen",x:["blush","sparkle"]}, worried:{e:"eyesOpen",b:"browWorried",m:"mouthFrown",x:["sweat"]},
+  shock:{e:"eyesWide",b:"browUp",m:"mouthOpenO",x:["surprise"]}, sleepy:{e:"eyesSleepy",b:"browNeutral",m:"mouthNeutral",x:["zzz"]}, sad:{e:"eyesOpen",b:"browWorried",m:"mouthFrown",x:["tear"]} };
+let curMood="neutral",npcMoodT=0,idleT=6; const npcSpeech=document.getElementById("npcSpeech");
+function setMood(m){ const c=MOODS[m]||MOODS.neutral, on=new Set([c.e,c.b,c.m,...c.x]); NPC_GROUPS.forEach(id=>{ const el=document.getElementById("g_"+id); if(el)el.style.display=on.has(id)?"":"none"; }); curMood=m; }
+function npcSay(text,mood,dur){ npcSpeech.textContent=text; setMood(mood||"neutral"); npcMoodT=dur||3.2; }
+const LINES={
+  idle:["화성 증시에 오신 걸 환영해요!","무리한 투자는… 위험해요.","차트 잘 보고 계신가요?","저는 안내원 '마리'예요. 잘 부탁해요!","분산투자, 잊지 마세요~","오늘도 좋은 하루!","빚은 신중하게, 아셨죠?","자동 채광기는 AS 좋은 걸로!"],
+  good:["오, 호재예요!","분위기가 좋은데요?","지금이 기회일까요?"], goodHeld:["보유 종목이 올라요! 축하해요!","와, 오르고 있어요!","좋은 선택이었어요!"],
+  bad:["음… 악재네요.","불안한 소식이에요…","조심하세요!"], badHeld:["보유 종목이 흔들려요…","손절도 용기예요.","으… 마음이 아프네요."],
+  crash:["꺄악?! 폭락이에요!","이럴 수가…!","패닉은 금물이에요!"], holiday:["오늘은 휴장일이에요. 저도 쉴게요~ 💤","장이 닫혀도 소문은 흘러요…","자는 사이 무슨 일이 날지도…?"],
+  gapUp:["갭 상승! 자고 일어나니 부자?!","개장 갭이 위로 튀었어요!","운이 좋으시네요!"], gapDown:["개장 갭 하락… 힘내세요.","이런 날도 있는 거예요…","자는 사이에 그만…"],
+  cartel:["쉿… 작전 세력이에요!","수상한 매수벽이…! 조심!","달콤할 때가 제일 위험해요."], loan:["빚은… 정말 무서운 거예요.","이자, 잊지 마세요!","대출은 신중하게…!"],
+  insider:["쉿, 우리끼리 비밀이에요~ 😉","특별히 알려드리는 거예요.","정보는 힘이죠. 후훗."], backFromWork:["다녀오셨어요? 그새 시장이 움직였네요!","고생하셨어요! 다시 거래예요.","땀 흘린 돈이 제일 값져요."],
+  ipo:["새 회사가 상장했어요! 신규주 조심!","오, 신규 상장이에요!","새내기 종목은 변동성이 커요~"], suspend:["어? 거래정지됐어요…","조사 결과를 기다려봐야겠네요.","불안한데요…"],
+  delist:["상장폐지라니…! 조작이었대요.","이래서 신규주는 무서워요…","주주분들 어떡해…"], merger:["합병설이래요! 급등 중!","대기업이 인수한다는데요?!","오오, 이거 대박 각?"],
+  mergerWin:["합병 성사! 주가 보전 지급됐어요!","축하해요, 대박이에요!","이런 행운이!"], mergerFail:["합병 무산… 폭락이에요.","소문만 믿으면 안 되는 거였어요…","아이고, 물리셨네요…"],
+  minerBreak:["채광기가 고장났어요…","AS 좋은 걸 살 걸 그랬죠?","돈이 날아갔어요…ㅠ"],
+};
+function npcTick(dt){ if(state!=="play"||laborMode)return;
+  if(debt>START_CASH*1.5 && curMood==="neutral" && Math.random()<dt*0.15){ npcSay(pick(["이자가 눈덩이처럼…!","빚 갚는 걸 잊지 마세요…"]),"sad",3); return; }
+  npcMoodT-=dt; if(npcMoodT<=0 && curMood!=="neutral") setMood("neutral");
+  idleT-=dt; if(idleT<=0){ idleT=9+Math.random()*7; if(curMood==="neutral") npcSpeech.textContent=pick(LINES.idle); } }
+
+// ---------- 게임 흐름 ----------
+function startGame(){ resetGame(); sizeCanvases(); state="play";
+  document.getElementById("titleOv").classList.remove("on"); document.getElementById("overOv").classList.remove("on"); laborOv.classList.remove("on");
+  try{ AC=AC||new (window.AudioContext||window.webkitAudioContext)(); }catch(e){} startBGM("hope"); }
+function gameOver(){ if(state!=="play")return; state="over"; laborMode=false; laborOv.classList.remove("on"); stopBGM();
+  const nw=netWorth(); let prev=0; try{prev=+localStorage.getItem("marsBest")||0;}catch(e){} const rec=Math.max(best,nw); if(rec>prev){ try{localStorage.setItem("marsBest",Math.round(rec));}catch(e){} }
+  document.getElementById("overNet").textContent=fmtMoney(nw); const win=nw>=START_CASH;
+  document.getElementById("overTitle").textContent=win?"🎉 대박!":"💸 파산!";
+  document.getElementById("overMsg").textContent=win?pick(["믿기지 않는 수익! 이 시장에서 살아남다니.","혹시 내부자? 화성 금융감독원이 지켜봅니다."]):pick(["화성에서 무일푼이 됐어요. 지구행 티켓값도 없네요…","역시 개미는 하우스를 못 이기나 봐요.","감자라도 심으셨어야죠.","빚이 발목을 잡았네요…","채광이라도 더 하실 걸 그랬어요…"]);
+  document.getElementById("overBest").textContent="🏆 최고 기록: "+fmtMoney(Math.round(Math.max(rec,prev))); beep(220,0.5,"sawtooth",0.08,90); }
+document.getElementById("startBtn").addEventListener("click",startGame);
+document.getElementById("restartBtn").addEventListener("click",startGame);
+document.getElementById("borrowBtn").addEventListener("click",borrow);
+document.getElementById("repayAllBtn").addEventListener("click",repayAll);
+document.getElementById("insiderBtn").addEventListener("click",buyInsider);
+document.getElementById("laborBtn").addEventListener("click",enterLabor);
+document.getElementById("laborBack").addEventListener("click",exitLabor);
+holdRepeat(document.getElementById("repayBtn"),repay);
+
+// ---------- 메인 루프 (아래 requestAnimationFrame 은 loop 1회 + kickoff 1회) ----------
+function frame(t){
+  requestAnimationFrame(frame);
+  const now=t/1000; let dt=last?now-last:0; last=now; if(dt<0)dt=0; else if(dt>0.05)dt=0.05;
+  if(state==="play") sim(dt*TIMESCALE);
+  if(!laborMode){ updateTicker(dt); for(const s of STOCKS) drawChart(s); renderHalt(); renderSidebar(); npcTick(dt); }
+  renderUI();
+}
+resetGame();
+requestAnimationFrame(()=>{ sizeCanvases(); requestAnimationFrame(frame); });
+</script>
+</body>
+</html>
