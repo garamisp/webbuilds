@@ -1,0 +1,525 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>상태창 용사 // STATUS HERO</title>
+<style>
+  html,body{margin:0;height:100%;background:#05060d;overflow:hidden;
+    font-family:"Malgun Gothic","맑은 고딕","Courier New",monospace;color:#e6ecff;-webkit-user-select:none;user-select:none}
+  #c{display:block;position:fixed;inset:0;image-rendering:pixelated}
+  #ui{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;
+    text-align:center;pointer-events:none}
+  #ui.on{pointer-events:auto;background:rgba(4,6,16,.62)}
+  #panel{max-width:660px;padding:24px}
+  h1{font-size:12vw;margin:0;letter-spacing:.04em;color:#ffffff;
+    text-shadow:0 0 14px #9fc0ff,0 0 40px #3a6bd0}
+  .sub{color:#bcd2ff;opacity:.9;margin:.2em 0 1.2em;font-size:min(4.5vw,20px);letter-spacing:.12em}
+  .hint{opacity:.85;font-size:min(3.4vw,15px);line-height:1.8;color:#cdd8f5}
+  .k{color:#8fd0ff;font-weight:bold}
+  .blink{animation:b 1s steps(2) infinite}@keyframes b{50%{opacity:.2}}
+  .big{font-size:min(9vw,54px);color:#ff6b6b;text-shadow:0 0 14px #b03030;margin:.1em}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="ui" class="on"><div id="panel"></div></div>
+<script>
+"use strict";
+const cv=document.getElementById("c"), ctx=cv.getContext("2d");
+const ui=document.getElementById("ui"), panel=document.getElementById("panel");
+let W=0,H=0,F=0;                                    // DPR held at 1 = far fewer pixels to fill
+function resize(){
+  const iw=window.innerWidth||1280, ih=window.innerHeight||720;
+  const s=Math.min(1,1280/iw);                      // cap backing buffer at 1280px wide (perf)
+  W=Math.max(2,Math.round(iw*s)); H=Math.max(2,Math.round(ih*s));
+  cv.width=W; cv.height=H;                           // low-res backing buffer ...
+  cv.style.width=iw+"px"; cv.style.height=ih+"px";   // ... CSS-stretched to the window
+  ctx.setTransform(1,0,0,1,0,0);
+  F=(H*0.5)/Math.tan(0.5*75*Math.PI/180);            // focal length from ~75deg vertical fov
+}
+addEventListener("resize",resize); resize();
+
+// ---------- input ----------
+const keys={};
+const WINKEYS=["KeyI","KeyC","KeyM","KeyK","KeyQ","KeyG"];
+addEventListener("keydown",e=>{
+  if(["Space","ArrowLeft","ArrowRight","ArrowUp","ArrowDown"].includes(e.code)) e.preventDefault();
+  if(e.repeat) return;
+  keys[e.code]=true;
+  if(e.code==="Enter" && state!=="play"){ start(); return; }
+  if(state!=="play") return;
+  if(e.code==="Escape"){ held=null; openT=0; return; }
+  if(WINKEYS.includes(e.code)) pressWindow(e.code);
+});
+addEventListener("keyup",e=>{ keys[e.code]=false; });
+let mouseDX=0;
+addEventListener("mousemove",e=>{ if(document.pointerLockElement===cv) mouseDX+=e.movementX; });
+addEventListener("mousedown",()=>{ if(state!=="play"){ start(); return; }
+  if(document.pointerLockElement!==cv) cv.requestPointerLock();
+  if(held) launch(); });                             // left click also throws the held window
+cv.addEventListener("click",()=>{ if(state!=="play") start(); });
+
+// ---------- audio (tiny synth, no assets) ----------
+let AC=null;
+function beep(freq,dur,type,vol,slideTo){
+  try{ AC=AC||new (window.AudioContext||window.webkitAudioContext)();
+    const o=AC.createOscillator(), g=AC.createGain(), t=AC.currentTime;
+    o.type=type||"square"; o.frequency.setValueAtTime(freq,t);
+    if(slideTo) o.frequency.exponentialRampToValueAtTime(slideTo,t+dur);
+    g.gain.setValueAtTime(vol||0.06,t); g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+    o.connect(g); g.connect(AC.destination); o.start(t); o.stop(t+dur);
+  }catch(e){}
+}
+function noise(dur,vol){
+  try{ AC=AC||new (window.AudioContext||window.webkitAudioContext)();
+    const n=Math.floor(AC.sampleRate*dur), buf=AC.createBuffer(1,n,AC.sampleRate), d=buf.getChannelData(0);
+    for(let i=0;i<n;i++) d[i]=(Math.random()*2-1)*(1-i/n);
+    const src=AC.createBufferSource(), g=AC.createGain(); src.buffer=buf; g.gain.value=vol||0.12;
+    src.connect(g); g.connect(AC.destination); src.start();
+  }catch(e){}
+}
+
+// ---------- world / state ----------
+const ARENA=44, GRID=4;
+const cam={x:0,z:0,y:1.6,yaw:0};
+let state="title";
+let hp,wave,kills,survived,between,betweenT,spawnQueue,spawnCd;
+const enemies=[], frags=[], graves=[];
+let held=null;         // key code of the currently-summoned window, or null
+let openT=0;           // 0..1 scale-in of the held window
+const flyWins=[];      // windows in flight — at most ONE of each type at a time
+let hurt=0, shake=0, launchGrin=0;
+let toastMsg="", toastT=0;
+
+// ---------- window catalog (damage scales with size + content) ----------
+// col = frame colour. spd = travel speed. splash = area-of-effect radius (0 = single target).
+const WINDOWS={
+  KeyI:{name:"인벤토리", w:1.5,h:1.2, dmg:28, spd:26, splash:1.5, col:"#f0c040", draw:drawInv},
+  KeyC:{name:"캐릭터",   w:1.7,h:1.9, dmg:52, spd:18, splash:3.4, col:"#ffd76a", draw:drawChar},
+  KeyM:{name:"지도",     w:2.0,h:2.0, dmg:44, spd:16, splash:6.0, col:"#9fe0ff", draw:drawMap},
+  KeyK:{name:"스킬",     w:1.4,h:1.8, dmg:36, spd:23, splash:2.2, col:"#c48fff", draw:drawSkill},
+  KeyQ:{name:"퀘스트",   w:0.9,h:1.9, dmg:22, spd:34, splash:0.0, col:"#ffe08a", draw:drawQuest},
+  KeyG:{name:"상점",     w:1.6,h:1.5, dmg:40, spd:20, splash:2.8, col:"#7dffb0", draw:drawShop},
+};
+
+function reset(){
+  cam.x=0; cam.z=0; cam.yaw=0;
+  hp=100; wave=0; kills=0; survived=0;
+  held=null; openT=0; flyWins.length=0; hurt=0; shake=0; launchGrin=0; toastT=0;
+  enemies.length=0; frags.length=0; graves.length=0;
+  between=true; betweenT=2.0; spawnQueue=0; spawnCd=0;
+  const R=()=>(Math.random()*2-1)*ARENA*0.72;
+  for(let i=0;i<12;i++){ const x=R(),z=R(); if(Math.hypot(x,z)<8){i--;continue;}
+    graves.push({x,z,s:1.2+Math.random()*1.2,cross:Math.random()<0.4}); }
+}
+function start(){ if(state==="play") return; reset(); state="play"; ui.className=""; panel.innerHTML="";
+  if(document.pointerLockElement!==cv) cv.requestPointerLock(); beep(520,0.08,"square",0.05,1040); }
+
+// ---------- window summon / launch ----------
+function pressWindow(code){
+  if(held===code){ launch(); return; }             // second press of the same key -> throw
+  held=code; openT=0.001;                            // switch/summon
+  beep(760,0.05,"triangle",0.04,1160);
+}
+function launch(){
+  if(!held) return;
+  if(flyWins.some(f=>f.key===held)){ shake=1; beep(120,0.05,"square",0.03,80); toast("같은 창이 날아가는 중!"); return; } // no duplicate of the same type
+  const w=WINDOWS[held];
+  const fx=Math.sin(cam.yaw), fz=Math.cos(cam.yaw);
+  flyWins.push({key:held, w:w.w,h:w.h, dmg:w.dmg, splash:w.splash, col:w.col, draw:w.draw,
+    x:cam.x+fx*1.4, z:cam.z+fz*1.4, y:cam.y-0.1, vx:fx*w.spd, vz:fz*w.spd, spin:0, t:0});
+  held=null; openT=0; launchGrin=1;
+  beep(300,0.12,"sawtooth",0.06,140); noise(0.06,0.05);
+}
+
+// ---------- 3D projection with near-plane clip ----------
+function toCam(px,py,pz){
+  const dx=px-cam.x, dz=pz-cam.z, dy=py-cam.y;
+  const cy=Math.cos(cam.yaw), sy=Math.sin(cam.yaw);
+  return {x:dx*cy-dz*sy, y:dy, z:dx*sy+dz*cy};
+}
+const NEAR=0.25;
+function seg(px1,py1,pz1,px2,py2,pz2){
+  let a=toCam(px1,py1,pz1), b=toCam(px2,py2,pz2);
+  if(a.z<NEAR && b.z<NEAR) return;
+  if(a.z<NEAR){ const t=(NEAR-a.z)/(b.z-a.z); a={x:a.x+(b.x-a.x)*t,y:a.y+(b.y-a.y)*t,z:NEAR}; }
+  else if(b.z<NEAR){ const t=(NEAR-b.z)/(a.z-b.z); b={x:b.x+(a.x-b.x)*t,y:b.y+(a.y-b.y)*t,z:NEAR}; }
+  ctx.moveTo(W/2+F*a.x/a.z, H/2-F*a.y/a.z);
+  ctx.lineTo(W/2+F*b.x/b.z, H/2-F*b.y/b.z);
+}
+function proj(px,py,pz){ const c=toCam(px,py,pz); if(c.z<NEAR) return null;
+  return {sx:W/2+F*c.x/c.z, sy:H/2-F*c.y/c.z, z:c.z}; }
+
+// ---------- skeleton wireframe (billboard, local units ~ -1..1) ----------
+const SKELETON=[
+ [-.16,.72,.16,.72],[-.16,.72,-.18,.92],[.16,.72,.18,.92],[-.18,.92,.18,.92], // skull box
+ [-.11,.66,.11,.66],[-.16,.72,-.11,.66],[.16,.72,.11,.66],                    // jaw
+ [0,.66,0,.10],                                                                // spine
+ [0,.52,-.20,.44],[0,.52,.20,.44],[0,.40,-.20,.34],[0,.40,.20,.34],[0,.28,-.15,.24],[0,.28,.15,.24], // ribs
+ [-.24,.58,.24,.58],[-.24,.58,-.34,.28],[-.34,.28,-.30,.02],[.24,.58,.34,.28],[.34,.28,.30,.02],     // shoulders+arms
+ [-.16,.10,.16,.10],                                                           // pelvis
+ [-.10,.10,-.16,-.40],[-.16,-.40,-.14,-.78],[.10,.10,.16,-.40],[.16,-.40,.14,-.78], // legs
+ [-.14,-.78,-.24,-.80],[.14,-.78,.24,-.80],                                    // feet
+];
+function drawSkeleton(e){
+  const bob=Math.sin(survived*6+e.ph)*0.04;
+  const p=proj(e.x, e.t.size*0.55+bob, e.z); if(!p) return;
+  const s=F*(e.t.size*0.5)/p.z; if(s<1) return;
+  ctx.beginPath();
+  for(const g of SKELETON){ ctx.moveTo(p.sx+g[0]*s,p.sy-g[1]*s); ctx.lineTo(p.sx+g[2]*s,p.sy-g[3]*s); }
+  ctx.lineWidth=e.flash>0?2.8:1.8;
+  ctx.strokeStyle=e.flash>0?"#ffffff":e.t.col;
+  ctx.stroke();
+  ctx.beginPath(); ctx.fillStyle="#ff4b4b";               // faint red eye-glow in the sockets
+  ctx.arc(p.sx-0.06*s,p.sy-0.80*s,Math.max(1,s*0.028),0,7);
+  ctx.arc(p.sx+0.06*s,p.sy-0.80*s,Math.max(1,s*0.028),0,7); ctx.fill();
+}
+
+// ---------- window content drawers (normalised coords: u,v in -0.5..0.5, v up) ----------
+// each receives L(u1,v1,u2,v2): a line in window space (already rotated+projected).
+function frame(L){ L(-.5,.5,.5,.5); L(.5,.5,.5,-.5); L(.5,-.5,-.5,-.5); L(-.5,-.5,-.5,.5); // border
+  L(-.5,.36,.5,.36);                                       // title bar
+  L(.40,.50,.46,.44); L(.46,.50,.40,.44); }                // close [X]
+function drawInv(L){ frame(L);
+  for(let c=0;c<=5;c++){ const u=-.44+c*.176; L(u,.28,u,-.44); }
+  for(let r=0;r<=3;r++){ const v=.28-r*.24; L(-.44,v,.44,v); }
+  L(-.40,.22,-.28,.10); L(-.28,.22,-.40,.10);              // a couple of item glyphs
+  L(.10,.22,.10,.10); L(.04,.16,.16,.16); }
+function drawChar(L){ frame(L);
+  const hx=-.24;                                            // paperdoll on the left
+  L(hx-.06,.24,hx+.06,.24); L(hx-.06,.24,hx,.30); L(hx+.06,.24,hx,.30); L(hx,.24,hx,.02); // head+neck
+  L(hx-.14,.14,hx+.14,.14); L(hx-.14,.14,hx-.16,-.06); L(hx+.14,.14,hx+.16,-.06);         // arms
+  L(hx,.02,hx-.10,-.30); L(hx,.02,hx+.10,-.30);            // legs
+  for(let i=0;i<4;i++){ const v=.22-i*.14;                  // stat bars on the right
+    L(.04,v,.44,v); L(.04,v-.06,.44,v-.06); L(.04,v,.04,v-.06); L(.44,v,.44,v-.06);
+    const f=.04+(.30-i*.06); L(f,v-.005,f,v-.055); } }
+function drawMap(L){ frame(L);
+  for(let i=0;i<=6;i++){ const u=-.44+i*.147; L(u,.28,u,-.44); const v=.28-i*.12; L(-.44,v,.44,v); }
+  L(0,.06,-.06,-.06); L(0,.06,.06,-.06); L(-.06,-.06,.06,-.06);   // player marker triangle
+  L(-.30,.20,-.10,.02); L(-.10,.02,.14,-.10); L(.14,-.10,.34,-.20); } // route
+function drawSkill(L){ frame(L);
+  const node=(u,v)=>{ const r=.05; L(u,v+r,u+r,v); L(u+r,v,u,v-r); L(u,v-r,u-r,v); L(u-r,v,u,v+r); };
+  L(0,.26,0,.02); L(0,.02,-.24,-.14); L(0,.02,.24,-.14); L(-.24,-.14,-.24,-.36); L(.24,-.14,.24,-.36);
+  node(0,.26); node(0,.02); node(-.24,-.14); node(.24,-.14); node(-.24,-.36); node(.24,-.36); }
+function drawQuest(L){ frame(L);
+  for(let i=0;i<5;i++){ const v=.26-i*.13;
+    L(-.34,v,-.24,v); L(-.24,v,-.24,v-.08); L(-.24,v-.08,-.34,v-.08); L(-.34,v-.08,-.34,v); // checkbox
+    if(i<2){ L(-.33,v-.04,-.29,v-.07); L(-.29,v-.07,-.22,v-.01); }                          // check mark
+    L(-.16,v-.04,.34,v-.04); } }                                                            // text line
+function drawShop(L){ frame(L);
+  L(-.05,.30,.05,.30); L(.05,.30,.02,.24); L(-.02,.24,-.05,.30); L(-.02,.24,.02,.24);       // coin
+  for(let i=0;i<3;i++){ const v=.14-i*.16;
+    L(-.42,v,-.30,v); L(-.30,v,-.30,v-.12); L(-.30,v-.12,-.42,v-.12); L(-.42,v-.12,-.42,v); // item box
+    L(-.42,v,-.30,v-.12);
+    for(let k=0;k<4;k++){ const u=.02+k*.10; L(u,v-.03,u,v-.09); } } }                       // price ticks
+
+// draw a window billboard at world (wx,wy,wz), spin (screen-plane radians), scale mult, bright?
+// classic JRPG menu box: translucent navy fill, accent-tinted title bar, crisp white frame+content.
+function drawWindowBillboard(win,wx,wy,wz,spin,mult,bright){
+  const p=proj(wx,wy,wz); if(!p) return;
+  const ppu=F/p.z, cos=Math.cos(spin), sin=Math.sin(spin);
+  const sw=win.w*ppu*mult, sh=win.h*ppu*mult;
+  const M=(u,v)=>{ const ax=u*sw, ay=-v*sh; return [p.sx+ax*cos-ay*sin, p.sy+ax*sin+ay*cos]; };
+  const L=(u1,v1,u2,v2)=>{ const a=M(u1,v1), b=M(u2,v2); ctx.moveTo(a[0],a[1]); ctx.lineTo(b[0],b[1]); };
+  const quad=(v0,v1)=>{ const a=M(-.5,v0),b=M(.5,v0),c=M(.5,v1),d=M(-.5,v1);
+    ctx.beginPath(); ctx.moveTo(a[0],a[1]); ctx.lineTo(b[0],b[1]); ctx.lineTo(c[0],c[1]); ctx.lineTo(d[0],d[1]); ctx.closePath(); };
+  quad(.5,-.5); ctx.fillStyle=bright?"rgba(28,52,108,0.70)":"rgba(24,44,96,0.5)"; ctx.fill();      // window body
+  quad(.5,.36); ctx.fillStyle=win.col; ctx.globalAlpha=bright?0.5:0.34; ctx.fill(); ctx.globalAlpha=1; // title bar
+  if(bright){ ctx.beginPath(); ctx.globalAlpha=.30; ctx.strokeStyle="#bcd6ff"; ctx.lineWidth=4.5; win.draw(L); ctx.stroke(); ctx.globalAlpha=1; }
+  ctx.beginPath(); ctx.strokeStyle=bright?"#ffffff":"#e2e9ff"; ctx.lineWidth=bright?2.2:1.6; win.draw(L); ctx.stroke();
+}
+
+// ---------- render ----------
+let last=0, fps=0;
+function render(){
+  const sx=(shake>0?(Math.random()*2-1)*shake*6:0), sy=(shake>0?(Math.random()*2-1)*shake*6:0);
+  ctx.setTransform(1,0,0,1,sx,sy);
+  ctx.fillStyle="#05060d"; ctx.fillRect(-8,-8,W+16,H+16);  // opaque fill doubles as the clear (1 pass)
+
+  const horizon=H/2, off=(cam.yaw*180/Math.PI)*3;
+  ctx.beginPath(); ctx.strokeStyle="#232c47"; ctx.lineWidth=1.2;  // distant ridge (parallax by yaw)
+  for(let i=-1;i<=40;i++){ const x=((i*60-off)%2400+2400)%2400-200;
+    const h=30+40*Math.abs(Math.sin(i*1.3))+20*Math.sin(i*0.7);
+    if(i===-1) ctx.moveTo(x,horizon); ctx.lineTo(x+30,horizon-h); ctx.lineTo(x+60,horizon); }
+  ctx.stroke();
+  ctx.beginPath(); ctx.strokeStyle="#9fb2da"; ctx.lineWidth=1.4;
+  ctx.moveTo(0,horizon); ctx.lineTo(W,horizon); ctx.stroke();     // horizon
+
+  ctx.beginPath(); ctx.strokeStyle="#37436a"; ctx.lineWidth=1;    // ground grid
+  for(let gx=-ARENA; gx<=ARENA; gx+=GRID) seg(gx,0,-ARENA,gx,0,ARENA);
+  for(let gz=-ARENA; gz<=ARENA; gz+=GRID) seg(-ARENA,0,gz,ARENA,0,gz);
+  ctx.stroke();
+
+  ctx.beginPath(); ctx.strokeStyle="#6b7ca6"; ctx.lineWidth=1.3;  // arena fence
+  const A=ARENA, WH=6, corners=[[-A,-A],[A,-A],[A,A],[-A,A]];
+  for(let i=0;i<4;i++){ const [x1,z1]=corners[i],[x2,z2]=corners[(i+1)%4];
+    seg(x1,0,z1,x1,WH,z1); seg(x1,0,z1,x2,0,z2); seg(x1,WH,z1,x2,WH,z2);
+    for(let t=0.2;t<1;t+=0.2){ const mx=x1+(x2-x1)*t, mz=z1+(z2-z1)*t; seg(mx,0,mz,mx,WH,mz); } }
+  ctx.stroke();
+
+  ctx.beginPath(); ctx.strokeStyle="#59688f"; ctx.lineWidth=1.2;  // gravestones / crosses
+  for(const o of graves){ const s=o.s;
+    if(o.cross){ seg(o.x,0,o.z,o.x,s*2.2,o.z); seg(o.x-s*0.7,s*1.5,o.z,o.x+s*0.7,s*1.5,o.z); }
+    else { seg(o.x-s*0.6,0,o.z,o.x-s*0.6,s*1.4,o.z); seg(o.x+s*0.6,0,o.z,o.x+s*0.6,s*1.4,o.z);
+      seg(o.x-s*0.6,s*1.4,o.z,o.x,s*1.8,o.z); seg(o.x+s*0.6,s*1.4,o.z,o.x,s*1.8,o.z); } }
+  ctx.stroke();
+
+  for(const e of enemies) drawSkeleton(e);                        // skeletons
+
+  for(const s of flyWins) drawWindowBillboard(s,s.x,s.y,s.z,s.spin,1,false);
+
+  ctx.beginPath(); ctx.strokeStyle="#dfe7ff"; ctx.lineWidth=1.4;  // debris (bone + window shards)
+  for(const f of frags){ const p1=proj(f.x,f.y,f.z), p2=proj(f.x+f.dx*0.3,f.y+f.dy*0.3,f.z+f.dz*0.3);
+    if(p1&&p2){ ctx.moveTo(p1.sx,p1.sy); ctx.lineTo(p2.sx,p2.sy); } }
+  ctx.stroke();
+
+  if(held){ const w=WINDOWS[held];                                // held window, floating in front
+    const fx=Math.sin(cam.yaw), fz=Math.cos(cam.yaw), sway=Math.sin(survived*2)*0.05;
+    drawWindowBillboard(w, cam.x+fx*2.0, cam.y-0.12+Math.sin(survived*3)*0.03, cam.z+fz*2.0,
+      sway, Math.min(1,openT)*1.0, true); }
+
+  ctx.setTransform(1,0,0,1,0,0);                                  // HUD is not shaken
+  drawHUD();
+}
+
+function drawHUD(){
+  const g="#e2e9ff", gd="#59688f", gb="#ffffff", red="#ff6b6b", amber="#ffcf5f", gold="#8fd0ff";
+  const BH=Math.max(88,Math.min(120,Math.round(H*0.17))), y0=H-BH;
+
+  // crosshair
+  ctx.beginPath(); ctx.strokeStyle=g; ctx.lineWidth=1.4;
+  ctx.moveTo(W/2-12,H/2); ctx.lineTo(W/2-4,H/2); ctx.moveTo(W/2+4,H/2); ctx.lineTo(W/2+12,H/2);
+  ctx.moveTo(W/2,H/2-12); ctx.lineTo(W/2,H/2-4); ctx.moveTo(W/2,H/2+4); ctx.lineTo(W/2,H/2+12); ctx.stroke();
+
+  if(hurt>0){ ctx.fillStyle="rgba(255,40,40,"+(hurt*0.4)+")"; ctx.fillRect(0,0,W,y0); }  // pain flash (3D only)
+  ctx.fillStyle="#2a9f70"; ctx.font="11px 'Courier New',monospace"; ctx.textAlign="left"; ctx.fillText(Math.round(fps)+" FPS",12,16);
+
+  // radar (top-right) — camera space, forward = up (matches the 3D view)
+  { const rr=46, rx=W-rr-16, ry=rr+16;
+    ctx.beginPath(); ctx.strokeStyle=g; ctx.lineWidth=1.2; ctx.arc(rx,ry,rr,0,7); ctx.stroke();
+    ctx.fillStyle=g; ctx.beginPath(); ctx.moveTo(rx,ry-7); ctx.lineTo(rx-5,ry+5); ctx.lineTo(rx+5,ry+5); ctx.closePath(); ctx.fill();
+    const rsy=Math.sin(cam.yaw), rcy=Math.cos(cam.yaw), sc=rr/ARENA;
+    for(const e of enemies){ const dx=e.x-cam.x, dz=e.z-cam.z;
+      const exr=dx*rcy-dz*rsy, fwd=dx*rsy+dz*rcy;
+      let bx=rx+exr*sc, by=ry-fwd*sc; const ox=bx-rx, oy=by-ry, od=Math.hypot(ox,oy);
+      if(od>rr){ bx=rx+ox/od*rr; by=ry+oy/od*rr; }
+      ctx.fillStyle="#eaeaea"; ctx.fillRect(bx-1.5,by-1.5,3,3); } }
+
+  // toast
+  if(toastT>0){ ctx.save(); ctx.globalAlpha=Math.min(1,toastT); ctx.fillStyle=gold;
+    ctx.font="bold "+Math.round(H*0.05)+"px 'Malgun Gothic',monospace"; ctx.textAlign="center";
+    ctx.fillText(toastMsg,W/2,H*0.28); ctx.restore(); }
+
+  // ===================== STATUS BAR =====================
+  ctx.fillStyle="rgba(9,13,28,.96)"; ctx.fillRect(0,y0,W,BH);
+  ctx.strokeStyle=g;  ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(0,y0);   ctx.lineTo(W,y0);   ctx.stroke();
+  ctx.strokeStyle=gd; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(0,y0+3); ctx.lineTo(W,y0+3); ctx.stroke();
+  const fr=[0,.30,.50,.70,1], px=fr.map(f=>Math.round(f*W));
+  ctx.strokeStyle=gd; ctx.beginPath();
+  for(let i=1;i<px.length-1;i++){ ctx.moveTo(px[i],y0+5); ctx.lineTo(px[i],H-4); } ctx.stroke();
+  const mid=(a,b)=>(px[a]+px[b])/2;
+  const cap=(a,b,t)=>{ ctx.fillStyle=gd; ctx.font="10px 'Courier New',monospace"; ctx.textAlign="center"; ctx.fillText(t,mid(a,b),y0+14); };
+
+  // 1) HP
+  const hcol=hp>60?g:hp>30?amber:red;
+  cap(0,1,"HP");
+  ctx.fillStyle=hcol; ctx.font="bold 32px 'Courier New',monospace"; ctx.textAlign="center"; ctx.fillText(Math.max(0,Math.round(hp)),mid(0,1),y0+BH*0.58);
+  { const bw=px[1]-px[0]-28, bx0=px[0]+14, byb=y0+BH-16, segs=Math.round(hp/5);
+    ctx.strokeStyle=gd; ctx.lineWidth=1; ctx.strokeRect(bx0,byb,bw,6);
+    ctx.fillStyle=hcol; for(let i=0;i<20;i++){ if(i<segs) ctx.fillRect(bx0+2+i*(bw-2)/20,byb+2,(bw-2)/20-1.2,2); } }
+
+  // 2) 용사 FACE
+  { const cx=mid(1,2), cyf=y0+BH*0.5, s=Math.min(BH*0.34,(px[2]-px[1])*0.30);
+    const fx0=px[1]+8, fy0=y0+8, fw=px[2]-px[1]-16, fh=BH-16;
+    ctx.strokeStyle=gd; ctx.lineWidth=1; ctx.strokeRect(fx0,fy0,fw,fh);
+    const expr=hp<=0?"dead":(hurt>0.5?"ouch":(launchGrin>0.2?"shout":(held?"focus":"normal")));
+    const tier=hp<=0?4:hp>=80?0:hp>=60?1:hp>=40?2:hp>=20?3:4;
+    let look=0,nd=1e18; const cyw=Math.cos(-cam.yaw), syw=Math.sin(-cam.yaw);
+    for(const e of enemies){ const dx=e.x-cam.x, dz=e.z-cam.z, lx=dx*cyw-dz*syw, lz=dx*syw+dz*cyw, dd=lx*lx+lz*lz;
+      if(lz>0&&dd<nd){ nd=dd; look=lx>1?1:(lx<-1?-1:0); } }
+    if(!enemies.length) look=[-1,0,1,0][Math.floor(survived*1.5)%4];
+    const blink=expr==="normal" && (Math.floor(survived*1000)%3400)<130;
+    drawFace(cx,cyf,s,expr,tier,look,blink); }
+
+  // 3) 상태창 (equipped / in-flight window)
+  { cap(2,3,"상태창"); const cx=mid(2,3), cy=y0+BH*0.46, s=(px[3]-px[2])*0.16;
+    const cur=held?WINDOWS[held]:null;
+    if(cur){ ctx.beginPath(); ctx.strokeStyle="#e2e9ff"; ctx.lineWidth=1.6;   // mini preview of the held window
+      const L=(u1,v1,u2,v2)=>{ ctx.moveTo(cx+u1*s*(cur.w/1.5),cy-v1*s); ctx.lineTo(cx+u2*s*(cur.w/1.5),cy-v2*s); };
+      cur.draw(L); ctx.stroke();
+      ctx.fillStyle=cur.col; ctx.font="bold 14px 'Malgun Gothic',monospace"; ctx.textAlign="center"; ctx.fillText(cur.name,cx,y0+BH-10);
+    } else {
+      ctx.fillStyle=gd; ctx.font="12px 'Malgun Gothic',monospace"; ctx.textAlign="center";
+      ctx.fillText(flyWins.length?"발사됨…":"창 없음",cx,cy+4);
+      ctx.fillText("I C M K Q G",cx,y0+BH-10); }
+    if(flyWins.length){ ctx.fillStyle=amber; ctx.font="bold 11px 'Courier New',monospace"; ctx.textAlign="center"; ctx.fillText("● 비행중 "+flyWins.length,cx,y0+16); } }
+
+  // 4) WAVE + KILLS
+  { cap(3,4,"WAVE"); const cx=mid(3,4);
+    ctx.fillStyle=gb; ctx.font="bold 32px 'Courier New',monospace"; ctx.textAlign="center"; ctx.fillText(wave,cx,y0+BH*0.56);
+    ctx.fillStyle=g; ctx.font="12px 'Courier New',monospace"; ctx.fillText("처치 "+kills,cx,y0+BH-12);
+    ctx.fillStyle=gd; ctx.font="11px 'Courier New',monospace"; ctx.fillText("적 "+enemies.length+" · "+survived.toFixed(0)+"s",cx,y0+BH-26); }
+
+  ctx.textAlign="left"; ctx.textBaseline="alphabetic";           // reset text state (no leaks)
+}
+
+// vector JRPG-hero face: spiky hair + big anime eyes. expr = normal|focus|shout|ouch|dead
+function drawFace(cx,cy,s,expr,tier,look,blink){
+  const line="#e6ecff", hair="#aecbff", iris="#dbe8ff", red="#ff6b6b", sweat="#8fd0ff";
+  ctx.lineJoin="round";
+  // spiky hair silhouette (the JRPG signature), drawn first
+  ctx.strokeStyle=hair; ctx.lineWidth=2; ctx.beginPath();
+  const HR=[[-.64,-.26],[-.76,-.62],[-.60,-1.04],[-.40,-.60],[-.22,-1.14],[-.02,-.58],[.18,-1.10],[.36,-.60],[.54,-1.02],[.72,-.60],[.64,-.26]];
+  ctx.moveTo(cx+HR[0][0]*s,cy+HR[0][1]*s); for(let i=1;i<HR.length;i++) ctx.lineTo(cx+HR[i][0]*s,cy+HR[i][1]*s); ctx.stroke();
+  // bangs falling onto the forehead
+  ctx.beginPath();
+  const BG=[[-.52,-.58],[-.36,-.28],[-.20,-.56],[-.06,-.56],[.06,-.24],[.20,-.54],[.32,-.56],[.46,-.32],[.58,-.56]];
+  ctx.moveTo(cx+BG[0][0]*s,cy+BG[0][1]*s); for(let i=1;i<BG.length;i++) ctx.lineTo(cx+BG[i][0]*s,cy+BG[i][1]*s); ctx.stroke();
+  // face outline (youthful)
+  ctx.strokeStyle=line; ctx.lineWidth=2; ctx.beginPath();
+  ctx.moveTo(cx-0.60*s,cy-0.26*s); ctx.lineTo(cx-0.58*s,cy+0.12*s); ctx.lineTo(cx-0.42*s,cy+0.54*s);
+  ctx.lineTo(cx-0.16*s,cy+0.84*s); ctx.lineTo(cx+0.16*s,cy+0.84*s); ctx.lineTo(cx+0.42*s,cy+0.54*s);
+  ctx.lineTo(cx+0.58*s,cy+0.12*s); ctx.lineTo(cx+0.60*s,cy-0.26*s); ctx.stroke();
+  // ears
+  ctx.lineWidth=1.6; ctx.beginPath();
+  ctx.moveTo(cx-0.58*s,cy+0.02*s); ctx.lineTo(cx-0.70*s,cy+0.10*s); ctx.lineTo(cx-0.58*s,cy+0.22*s);
+  ctx.moveTo(cx+0.58*s,cy+0.02*s); ctx.lineTo(cx+0.70*s,cy+0.10*s); ctx.lineTo(cx+0.58*s,cy+0.22*s); ctx.stroke();
+  // eyebrows
+  ctx.lineWidth=2.4; ctx.beginPath();
+  if(expr==="ouch"){ ctx.moveTo(cx-0.46*s,cy-0.28*s); ctx.lineTo(cx-0.16*s,cy-0.40*s); ctx.moveTo(cx+0.46*s,cy-0.28*s); ctx.lineTo(cx+0.16*s,cy-0.40*s); }
+  else if(expr==="focus"||expr==="shout"){ ctx.moveTo(cx-0.46*s,cy-0.34*s); ctx.lineTo(cx-0.12*s,cy-0.14*s); ctx.moveTo(cx+0.46*s,cy-0.34*s); ctx.lineTo(cx+0.12*s,cy-0.14*s); }
+  else { ctx.moveTo(cx-0.46*s,cy-0.30*s); ctx.lineTo(cx-0.14*s,cy-0.20*s); ctx.moveTo(cx+0.46*s,cy-0.30*s); ctx.lineTo(cx+0.14*s,cy-0.20*s); }
+  ctx.stroke();
+  // big anime eyes
+  const ex=0.30*s, ey=cy+0.02*s; ctx.lineWidth=2;
+  if(expr==="dead"){ ctx.beginPath(); for(const sgn of[-1,1]){ const x=cx+sgn*ex;    // X_X
+      ctx.moveTo(x-0.12*s,ey-0.12*s); ctx.lineTo(x+0.12*s,ey+0.12*s); ctx.moveTo(x+0.12*s,ey-0.12*s); ctx.lineTo(x-0.12*s,ey+0.12*s); } ctx.stroke(); }
+  else if(expr==="ouch"){ ctx.beginPath(); for(const sgn of[-1,1]){ const x=cx+sgn*ex; // >< squeezed
+      ctx.moveTo(x-0.13*s,ey-0.11*s); ctx.lineTo(x+0.05*s,ey); ctx.lineTo(x-0.13*s,ey+0.11*s); } ctx.stroke(); }
+  else if(blink){ ctx.beginPath(); for(const sgn of[-1,1]){ const x=cx+sgn*ex; ctx.moveTo(x-0.13*s,ey); ctx.lineTo(x+0.13*s,ey); } ctx.stroke(); }
+  else { const eh=(expr==="shout"?0.21*s:expr==="focus"?0.12*s:0.18*s), ewd=0.15*s;
+    for(const sgn of[-1,1]){ const x=cx+sgn*ex;
+      ctx.strokeStyle=line; ctx.beginPath(); ctx.ellipse(x,ey,ewd,eh,0,0,6.2832); ctx.stroke();
+      ctx.fillStyle=iris; ctx.beginPath(); ctx.arc(x+look*0.05*s, ey+0.02*s, Math.min(eh*0.72,0.09*s),0,6.2832); ctx.fill(); } }
+  // small nose
+  ctx.strokeStyle=line; ctx.lineWidth=1.5; ctx.beginPath();
+  ctx.moveTo(cx-0.01*s,cy+0.22*s); ctx.lineTo(cx+0.06*s,cy+0.31*s); ctx.lineTo(cx-0.04*s,cy+0.31*s); ctx.stroke();
+  // mouth
+  const my=cy+0.56*s; ctx.lineWidth=2; ctx.beginPath();
+  if(expr==="shout"){ ctx.ellipse(cx,my,0.15*s,0.16*s,0,0,6.2832); ctx.stroke(); }
+  else if(expr==="ouch"){ ctx.moveTo(cx-0.18*s,my); for(let i=1;i<=4;i++) ctx.lineTo(cx+(-0.18+0.09*i)*s, my+((i%2)?0.07:-0.02)*s); ctx.stroke(); }
+  else if(expr==="dead"){ ctx.moveTo(cx-0.16*s,my+0.04*s); ctx.lineTo(cx+0.16*s,my); ctx.stroke(); }
+  else if(expr==="focus"){ ctx.moveTo(cx-0.14*s,my); ctx.lineTo(cx+0.14*s,my); ctx.stroke(); }
+  else { ctx.moveTo(cx-0.20*s,my-0.04*s); ctx.quadraticCurveTo(cx,my+0.12*s,cx+0.20*s,my-0.04*s); ctx.stroke(); } // confident smile
+  // damage tiers: sweat -> cheek scratch -> blood
+  if(tier>=1){ ctx.strokeStyle=sweat; ctx.lineWidth=1.6; ctx.beginPath();
+    ctx.moveTo(cx+0.48*s,cy-0.08*s); ctx.quadraticCurveTo(cx+0.56*s,cy+0.04*s,cx+0.48*s,cy+0.12*s); ctx.stroke(); }
+  if(tier>=2){ ctx.strokeStyle=red; ctx.lineWidth=1.8; ctx.beginPath();
+    ctx.moveTo(cx-0.40*s,cy+0.10*s); ctx.lineTo(cx-0.26*s,cy+0.24*s); ctx.moveTo(cx-0.26*s,cy+0.10*s); ctx.lineTo(cx-0.40*s,cy+0.24*s); ctx.stroke(); }
+  if(tier>=3){ ctx.strokeStyle=red; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(cx+0.20*s,my+0.06*s); ctx.lineTo(cx+0.24*s,cy+0.80*s); ctx.stroke(); }
+  if(tier>=4){ ctx.strokeStyle=red; ctx.lineWidth=1.6; ctx.beginPath(); ctx.moveTo(cx-0.10*s,cy+0.34*s); ctx.lineTo(cx-0.06*s,cy+0.64*s); ctx.stroke(); }
+  ctx.lineJoin="miter";
+}
+
+// ---------- update ----------
+function collideMove(nx,nz){
+  const b=ARENA-1.2; nx=Math.max(-b,Math.min(b,nx)); nz=Math.max(-b,Math.min(b,nz));
+  cam.x=nx; cam.z=nz;
+}
+function spawnEnemy(){
+  const a=Math.random()*Math.PI*2, r=ARENA*0.9;
+  const bag=wave<=2?["grunt","grunt","fast"]:wave<=5?["grunt","fast","grunt","big"]:["grunt","fast","big","big"];
+  const t=SKEL[bag[(Math.random()*bag.length)|0]];
+  enemies.push({x:Math.cos(a)*r,z:Math.sin(a)*r,t,hp:t.hp*(1+0.07*wave),atk:0,flash:0,ph:Math.random()*6.28});
+}
+const SKEL={
+  grunt:{hp:24,spd:4.6,size:1.8,dmg:8,rng:2.0,cd:1.0,col:"#eaeaea"},
+  fast: {hp:16,spd:7.2,size:1.6,dmg:6,rng:1.9,cd:0.8,col:"#cfe8ff"},
+  big:  {hp:74,spd:3.3,size:2.7,dmg:18,rng:2.7,cd:1.2,col:"#ffffff"},
+};
+function hurtEnemy(e,d){ e.hp-=d; e.flash=1; if(e.hp<=0) killEnemy(e); }
+function killEnemy(e){ const i=enemies.indexOf(e); if(i<0) return; enemies.splice(i,1); kills++;
+  beep(160,0.22,"sawtooth",0.05,50); noise(0.18,0.09);
+  for(let k=0;k<9;k++) frags.push({x:e.x,y:e.t.size*0.5,z:e.z,
+    dx:(Math.random()*2-1)*4,dy:Math.random()*5+1,dz:(Math.random()*2-1)*4,life:0.8}); }
+function windowBreakFx(x,z,s){ beep(680,0.1,"triangle",0.05,240); noise(0.1,0.06);
+  for(let k=0;k<12;k++) frags.push({x,y:1.2,z,
+    dx:(Math.random()*2-1)*6,dy:Math.random()*5,dz:(Math.random()*2-1)*6,life:0.6}); }
+function damage(d){ hp-=d; hurt=1; shake=Math.max(shake,0.5); beep(90,0.15,"sawtooth",0.07,50);
+  if(hp<=0){ hp=0; gameover(); } }
+
+function update(dt){
+  if(state!=="play") return;
+  survived+=dt;
+  cam.yaw+=mouseDX*0.0022; mouseDX=0;
+  if(keys.ArrowLeft) cam.yaw-=2.4*dt; if(keys.ArrowRight) cam.yaw+=2.4*dt;
+  const fwd=(keys.KeyW||keys.ArrowUp?1:0)-(keys.KeyS||keys.ArrowDown?1:0);
+  const str=(keys.KeyD?1:0)-(keys.KeyA?1:0);
+  const sp=(keys.ShiftLeft||keys.ShiftRight?12:7.5)*dt;
+  const cy=Math.cos(cam.yaw), sy=Math.sin(cam.yaw);
+  if(fwd||str) collideMove(cam.x+(sy*fwd+cy*str)*sp, cam.z+(cy*fwd-sy*str)*sp);
+
+  if(held) openT=Math.min(1,openT+dt*6);
+  hurt=Math.max(0,hurt-dt*2); shake=Math.max(0,shake-dt*3); launchGrin=Math.max(0,launchGrin-dt*2);
+  if(toastT>0) toastT-=dt;
+
+  // flying windows (any number, but only one of each type)
+  for(let i=flyWins.length-1;i>=0;i--){ const s=flyWins[i]; s.t+=dt; s.x+=s.vx*dt; s.z+=s.vz*dt; s.spin+=dt*7;
+    let hit=null; for(const e of enemies){ if(Math.hypot(s.x-e.x,s.z-e.z) < e.t.size*0.5+s.w*0.5){ hit=e; break; } }
+    const oob=Math.abs(s.x)>ARENA||Math.abs(s.z)>ARENA;
+    if(hit||oob||s.t>2.4){ const bx=hit?hit.x:s.x, bz=hit?hit.z:s.z;
+      if(s.splash>0){ for(const e of [...enemies]){ const d=Math.hypot(e.x-bx,e.z-bz);
+          if(d<=s.splash+e.t.size*0.4) hurtEnemy(e, s.dmg*(1-0.55*d/(s.splash+0.5))); } }
+      else if(hit) hurtEnemy(hit,s.dmg);
+      if(hit||s.splash>0) windowBreakFx(bx,bz,s);
+      flyWins.splice(i,1); } }
+
+  // waves
+  const alive=enemies.length;
+  if(between){ betweenT-=dt; if(betweenT<=0){ between=false; wave++; spawnQueue=4+wave*2; spawnCd=0;
+      toast("WAVE "+wave); beep(320,0.14,"sawtooth",0.05,190); } }
+  else { spawnCd-=dt; if(spawnQueue>0 && spawnCd<=0 && alive<38){ spawnEnemy(); spawnQueue--; spawnCd=Math.max(0.3,1.1-wave*0.05); }
+    if(spawnQueue===0 && alive<=Math.floor(wave/6)){ between=true; betweenT=3; } }
+
+  // enemies
+  for(let i=enemies.length-1;i>=0;i--){ const e=enemies[i]; e.flash=Math.max(0,e.flash-dt*5); e.atk-=dt;
+    const dx=cam.x-e.x, dz=cam.z-e.z, d=Math.hypot(dx,dz)||1;
+    if(d>e.t.rng){ e.x+=dx/d*e.t.spd*dt; e.z+=dz/d*e.t.spd*dt; }
+    else if(e.atk<=0){ e.atk=e.t.cd; damage(e.t.dmg); } }
+
+  // debris
+  for(let i=frags.length-1;i>=0;i--){ const f=frags[i]; f.x+=f.dx*dt; f.y+=f.dy*dt; f.z+=f.dz*dt;
+    f.dy-=7*dt; f.life-=dt; if(f.life<=0) frags.splice(i,1); }
+}
+
+function toast(m){ toastMsg=m; toastT=1.6; }
+
+// ---------- flow ----------
+function titleScreen(){ ui.className="on";
+  panel.innerHTML='<h1>상태창 용사</h1><div class="sub">// STATUS WINDOW HERO //</div>'+
+   '<div class="hint blink">클릭 또는 ENTER 로 시작</div>'+
+   '<div class="hint" style="margin-top:1.1em">이동 <span class="k">WASD</span> · 회전 <span class="k">마우스</span> · 질주 <span class="k">SHIFT</span><br>'+
+   '상태창 소환 <span class="k">I</span>인벤 <span class="k">C</span>캐릭 <span class="k">M</span>지도 <span class="k">K</span>스킬 <span class="k">Q</span>퀘스트 <span class="k">G</span>상점<br>'+
+   '같은 키를 <b>한 번 더</b> (또는 <span class="k">클릭</span>) 누르면 바라보는 방향으로 <b>발사</b><br>'+
+   '창이 클수록·내용이 많을수록 아프다. 같은 창은 하나씩만, 다른 창은 동시에 발사 가능.<br>'+
+   '<span style="opacity:.7">흰 해골 호드를 상태창으로 부숴라. ESC 로 창 닫기.</span></div>'; }
+function gameover(){ state="over"; document.exitPointerLock&&document.exitPointerLock(); ui.className="on";
+  panel.innerHTML='<div class="big">쓰러졌다…</div>'+
+   '<div class="sub">WAVE '+wave+' &nbsp;·&nbsp; '+kills+' 처치 &nbsp;·&nbsp; '+survived.toFixed(0)+'s 생존</div>'+
+   '<div class="hint blink">클릭 또는 ENTER 로 재도전</div>'; beep(200,0.6,"sawtooth",0.08,40); }
+reset(); titleScreen();
+
+// ---------- main loop (schedule rAF exactly once, at the top) ----------
+function loop(now){
+  requestAnimationFrame(loop);                        // first, so a draw error can't kill the loop
+  if(!last) last=now;
+  let dt=(now-last)/1000; last=now;
+  if(dt>0 && dt<1) fps = fps ? fps*0.92+(1/dt)*0.08 : 1/dt;
+  if(dt>0.05) dt=0.05;                                // clamp so a stall doesn't teleport everything
+  update(dt); render();
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
