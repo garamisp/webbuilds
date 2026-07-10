@@ -80,6 +80,48 @@ function noise(dur,vol){
   }catch(e){}
 }
 
+// ---------- 8-bit heroic BGM (procedural chiptune loop, no assets) ----------
+let bgmGain=null, bgmOn=false, bgmStep=0, bgmNextTime=0;
+const _=0, BPM=142, STEP=60/BPM/2;                       // eighth-note step
+const mtof=n=> n? 440*Math.pow(2,(n-69)/12) : 0;         // MIDI note -> Hz (0 = rest)
+const BGM_LEAD=[  // 8 bars: C  G  Am  F  C  G  Am  G — brave major-key march
+ 72,76,79,84, 83,79,76,79,   74,79,83,86, 84,79,74,71,
+ 69,76,81,84, 81,76,72,76,   77,81,84,81, 79,77,74,79,
+ 72,76,79,84, 88,84,79,76,   74,79,83,79, 86,83,79,74,
+ 81,84,88,84, 81,76,81,84,   79,83,86,83, 79,74,79,_,
+];
+const BGM_BASS=[  // root/fifth on quarter notes, an octave down
+ 48,_,43,_, 48,_,43,_,  43,_,50,_, 43,_,50,_,
+ 45,_,40,_, 45,_,40,_,  41,_,48,_, 41,_,48,_,
+ 48,_,43,_, 48,_,43,_,  43,_,50,_, 43,_,50,_,
+ 45,_,40,_, 45,_,40,_,  43,_,50,_, 43,_,43,_,
+];
+const BGM_DRUM=[1,2,3,2, 1,2,3,2];                       // kick / hat / snare, repeats each bar
+function bgmVoice(freq,t,dur,type,vol){ if(!freq) return;
+  const o=AC.createOscillator(), g=AC.createGain(); o.type=type; o.frequency.setValueAtTime(freq,t);
+  g.gain.setValueAtTime(0.0001,t); g.gain.linearRampToValueAtTime(vol,t+0.012); g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+  o.connect(g); g.connect(bgmGain); o.start(t); o.stop(t+dur+0.02); }
+function bgmHit(t,kind){
+  if(kind===1){ const o=AC.createOscillator(), g=AC.createGain(); o.type="sine";       // kick
+    o.frequency.setValueAtTime(150,t); o.frequency.exponentialRampToValueAtTime(46,t+0.12);
+    g.gain.setValueAtTime(0.12,t); g.gain.exponentialRampToValueAtTime(0.0001,t+0.15);
+    o.connect(g); g.connect(bgmGain); o.start(t); o.stop(t+0.17); }
+  else { const dur=kind===3?0.12:0.03, n=Math.floor(AC.sampleRate*dur), buf=AC.createBuffer(1,n,AC.sampleRate), d=buf.getChannelData(0); // hat/snare
+    for(let i=0;i<n;i++) d[i]=(Math.random()*2-1)*(1-i/n);
+    const s=AC.createBufferSource(), g=AC.createGain(); s.buffer=buf; g.gain.value=kind===3?0.06:0.022; s.connect(g); g.connect(bgmGain); s.start(t); } }
+function bgmSchedule(){ if(!bgmOn||!AC) return;                                          // lookahead scheduler on the audio clock
+  const ahead=AC.currentTime+0.18;
+  while(bgmNextTime<ahead){ const i=bgmStep%BGM_LEAD.length;
+    bgmVoice(mtof(BGM_LEAD[i]), bgmNextTime, STEP*0.92, "square", 0.045);
+    bgmVoice(mtof(BGM_BASS[i]), bgmNextTime, STEP*1.9,  "triangle", 0.075);
+    bgmHit(bgmNextTime, BGM_DRUM[bgmStep%8]);
+    bgmStep++; bgmNextTime+=STEP; } }
+function startBGM(){ try{ AC=AC||new (window.AudioContext||window.webkitAudioContext)();
+  if(AC.state==="suspended") AC.resume();
+  if(!bgmGain){ bgmGain=AC.createGain(); bgmGain.gain.value=0.55; bgmGain.connect(AC.destination); }
+  bgmStep=0; bgmNextTime=AC.currentTime+0.12; bgmOn=true; }catch(e){} }
+function stopBGM(){ bgmOn=false; }
+
 // ---------- world / state ----------
 const ARENA=44, GRID=4;
 const cam={x:0,z:0,y:1.6,yaw:0};
@@ -116,7 +158,7 @@ function reset(){
     graves.push({x,z,s:1.2+Math.random()*1.2,cross:Math.random()<0.4}); }
 }
 function start(){ if(state==="play") return; reset(); state="play"; ui.className=""; panel.innerHTML="";
-  if(document.pointerLockElement!==cv) cv.requestPointerLock(); beep(520,0.08,"square",0.05,1040); }
+  if(document.pointerLockElement!==cv) cv.requestPointerLock(); beep(520,0.08,"square",0.05,1040); startBGM(); }
 
 // ---------- window summon / launch ----------
 function pressWindow(code){
@@ -600,7 +642,7 @@ function titleScreen(){ ui.className="on";
    '창이 클수록·내용이 많을수록 아프다. 같은 창은 하나씩만, 다른 창은 동시에 발사 가능.<br>'+
    '<span class="k">5웨이브마다 거대 드래곤</span> — 양쪽 <b>날개</b>부터 부순 뒤 <b>몸통</b>을 노려라!<br>'+
    '<span style="opacity:.7">흰 해골 호드를 상태창으로 부숴라. ESC 로 창 닫기.</span></div>'; }
-function gameover(){ state="over"; document.exitPointerLock&&document.exitPointerLock(); ui.className="on";
+function gameover(){ state="over"; stopBGM(); document.exitPointerLock&&document.exitPointerLock(); ui.className="on";
   panel.innerHTML='<div class="big">쓰러졌다…</div>'+
    '<div class="sub">WAVE '+wave+' &nbsp;·&nbsp; '+kills+' 처치 &nbsp;·&nbsp; 드래곤 '+bossKills+' &nbsp;·&nbsp; '+survived.toFixed(0)+'s 생존</div>'+
    '<div class="hint blink">클릭 또는 ENTER 로 재도전</div>'; beep(200,0.6,"sawtooth",0.08,40); }
@@ -613,7 +655,7 @@ function loop(now){
   let dt=(now-last)/1000; last=now;
   if(dt>0 && dt<1) fps = fps ? fps*0.92+(1/dt)*0.08 : 1/dt;
   if(dt>0.05) dt=0.05;                                // clamp so a stall doesn't teleport everything
-  update(dt); render();
+  update(dt); render(); bgmSchedule();                // keep the chiptune loop fed (audio-clock scheduled)
 }
 requestAnimationFrame(loop);
 </script>
