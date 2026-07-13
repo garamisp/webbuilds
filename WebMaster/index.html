@@ -1,0 +1,705 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>거미줄 마스터 // Web Master</title>
+<style>
+  html,body{margin:0;height:100%;background:#070a12;overflow:hidden;
+    font-family:"Segoe UI","Malgun Gothic",system-ui,sans-serif;color:#cfe6ff;
+    -webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
+  #c{display:block;position:fixed;inset:0}
+  #ui{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;
+    text-align:center;pointer-events:none;transition:background .4s}
+  #ui.on{pointer-events:auto;background:rgba(6,9,17,.55)}
+  #panel{max-width:560px;padding:22px;opacity:0;transition:opacity .5s}
+  #ui.on #panel{opacity:1}
+  h1{font-size:min(14vw,74px);margin:0 0 .1em;letter-spacing:.04em;color:#eaf5ff;
+    text-shadow:0 0 14px #4aa3ff,0 0 40px #1f5fbf}
+  .sub{color:#8fc3ff;opacity:.85;margin:.1em 0 1.1em;font-size:min(4.4vw,19px);letter-spacing:.02em}
+  .hint{opacity:.8;font-size:min(3.7vw,15px);line-height:1.9}
+  .k{display:inline-block;min-width:1.6em;padding:.05em .4em;margin:0 .15em;border:1px solid #3a5a8a;
+    border-radius:5px;background:#111a2c;color:#bfe0ff;font-size:.92em}
+  .big{font-size:min(11vw,66px);color:#ffd27a;text-shadow:0 0 16px #b07a20;margin:.05em 0 .15em}
+  .score{font-size:min(6.4vw,34px);color:#eaf5ff;margin:.1em 0}
+  .score b{color:#7ff0c8;font-weight:700}
+  .blink{animation:b 1.1s steps(2,jump-none) infinite}@keyframes b{50%{opacity:.3}}
+  .best{opacity:.75;font-size:min(4vw,16px);margin-top:.4em}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="ui" class="on"><div id="panel"></div></div>
+<script>
+"use strict";
+/* ============================================================
+   거미줄 마스터 (Web Master)
+   한붓그리기 + 리듬. 미리 지어진 거미줄 위를 직진하는 꼬마 거미.
+   갈림길에서 좌/우(없으면 직진)로 방향 선택. 이미 걸은 줄은 못 밟음.
+   막다른 곳(안 밟은 출구 0) = 게임오버. 오래 살아남기.
+   ── 캔버스 성능 규칙(참고 메모)을 준수:
+     · rAF는 frame() 최상단에서 정확히 1회 스케줄
+     · shadowBlur는 루프 안에서 절대 사용 안 함 (글로우는 이중 스트로크)
+     · DPR=1 + 백버퍼 상한, 불투명 fillRect가 곧 clear
+     · 동일 스타일 세그먼트는 한 path로 배치 스트로크
+     · dt 양끝 클램프
+   ============================================================ */
+
+/* ---------- canvas ---------- */
+const cv = document.getElementById("c"), ctx = cv.getContext("2d");
+const ui = document.getElementById("ui"), panel = document.getElementById("panel");
+let W = 0, H = 0, MIN = 0;
+let playScale = 1, fitScale = 1;
+function resize(){
+  const iw = window.innerWidth || 960, ih = window.innerHeight || 640;
+  const s = Math.min(1, 1280 / iw);                 // 백버퍼 상한(성능)
+  W = Math.max(2, Math.round(iw * s));
+  H = Math.max(2, Math.round(ih * s));
+  cv.width = W; cv.height = H;                        // 저해상 백버퍼 …
+  cv.style.width = iw + "px"; cv.style.height = ih + "px"; // … CSS로 늘림 (DPR=1)
+  ctx.setTransform(1,0,0,1,0,0);
+  MIN = Math.min(W, H);
+  playScale = 0.42 * MIN / (4 * D);                  // 대략 4개 링이 보이도록
+  fitScale  = 0.90 * MIN / (2 * (worldR + D));       // 종료 시 전체가 들어오도록
+}
+addEventListener("resize", resize);
+
+/* ---------- audio (tiny synth) ---------- */
+let AC = null;
+function ac(){ if(!AC) AC = new (window.AudioContext||window.webkitAudioContext)(); return AC; }
+function tone(freq, dur, type, vol, slideTo){
+  try{
+    const a = ac(), o = a.createOscillator(), g = a.createGain(), t = a.currentTime;
+    o.type = type || "sine"; o.frequency.setValueAtTime(freq, t);
+    if(slideTo) o.frequency.exponentialRampToValueAtTime(slideTo, t + dur);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(vol, t + 0.008);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g); g.connect(a.destination);
+    o.start(t); o.stop(t + dur + 0.02);
+  }catch(e){}
+}
+// 도착음: 콤보가 오를수록 살짝 높은 음(펜타토닉)으로
+const PENTA = [0,2,4,7,9,12,14,16,19,21];
+function playPluck(combo){                         // 도착음(리드 멜로디) — BGM 위에 얹힘
+  const step = PENTA[Math.min(PENTA.length-1, combo % PENTA.length)];
+  const f = 440 * Math.pow(2, step/12);            // A 계열, BGM과 같은 조성
+  tone(f, 0.16, "triangle", 0.17);
+}
+// ── 흥겨운 BGM: 16분음표 시퀀서. 정박(비트)엔 킥/도착음이, 그 '사이(엇박)'엔
+//    8분음표 아르페지오 리드가 흘러서 밑에 멜로디가 도는 게 들린다. 템포와 함께 빨라짐.
+const BGM_CHORDS = [0, 7, 9, 5];                   // I–V–vi–IV (A 메이저), 마디(=4비트=16스텝)당
+const BGM_ARP8   = [0, 4, 7, 4, 9, 7, 12, 7];      // 8분음표 리드(코드루트 기준 반음) — 1마디=8개
+function bgmStep(s){                               // s = 16분음표 인덱스
+  const bar  = Math.floor(s/16) % BGM_CHORDS.length;
+  const root = 220 * Math.pow(2, BGM_CHORDS[bar]/12);
+  const p    = s % 16;                             // 마디 안 16분 위치 0..15
+  // 드럼
+  if(p % 4 === 0) tone(70, 0.16, "sine", p===0?0.20:0.13, 46);      // 킥(매 정박)
+  if(p === 4 || p === 12) tone(1800, 0.05, "square", 0.05);         // 스네어(백비트 2·4박)
+  if(p % 2 === 0) tone(6000, 0.015, "square", p%4===0?0.018:0.03);  // 하이햇(8분, 엇박 살짝 밝게)
+  // 베이스(싱코페이션: 정박 + 8분 뒤)
+  if(p===0 || p===6 || p===8 || p===14) tone(root/2, 0.17, "triangle", 0.10);
+  // 리드 아르페지오(8분음표) — 정박 사이사이에 음 → BGM으로 인지
+  if(p % 2 === 0) tone(root * Math.pow(2, BGM_ARP8[(p/2) % BGM_ARP8.length]/12), 0.12, "square", 0.05);
+}
+function playTurn(){ tone(520, 0.05, "square", 0.05); }
+function playPerfect(){ tone(1320, 0.09, "sine", 0.12); }
+function playRiskSfx(tier){                        // 위험 보너스 스파클(티어 높을수록 화려)
+  tone(660*Math.pow(2, tier/12), 0.09, "square", 0.07);
+  tone(1320*Math.pow(2, tier/12), 0.18, "triangle", 0.10, 2200); // 상승 스윕
+}
+function playDeath(){ tone(220, 0.5, "sawtooth", 0.2, 60); tone(110, 0.6, "sine", 0.18, 45); }
+
+/* ---------- web (concentric triangulated orb) ---------- */
+const D = 72;          // 기준 간선 길이(월드 단위)
+const RINGS = 7;       // 중심 밖 링 개수
+let nodes = [];        // {x,y,edges:[edgeIdx]}
+let edges = [];        // {a,b,len}
+let worldR = 1;        // 최대 반지름
+
+function rnd(a,b){ return a + Math.random()*(b-a); }
+function addEdge(map, a, b){
+  if(a===b) return;
+  const key = a<b ? a+"_"+b : b+"_"+a;
+  if(map.has(key)) return;
+  const dx = nodes[a].x-nodes[b].x, dy = nodes[a].y-nodes[b].y;
+  const idx = edges.length;
+  edges.push({a, b, len: Math.hypot(dx,dy)});
+  nodes[a].edges.push(idx); nodes[b].edges.push(idx);
+  map.set(key, idx);
+}
+function angDist(a, b){ let d = Math.abs(a-b) % (Math.PI*2); return d>Math.PI ? Math.PI*2-d : d; }
+
+function buildWeb(){
+  nodes = []; edges = [];
+  const rings = [];                       // rings[j] = [nodeIdx,...]
+  nodes.push({x:0, y:0, edges:[]});        // 0 = 중심
+  rings.push([0]);
+  worldR = 1;
+  for(let j=1; j<=RINGS; j++){
+    const radius = D * j * rnd(0.94, 1.03);
+    const N = Math.max(3, Math.round(2*Math.PI*radius / D)); // 둘레/기준길이 → 코드 ≈ D 유지
+    const rot = rnd(0, Math.PI*2);
+    const idxs = [];
+    for(let k=0; k<N; k++){
+      const ang = rot + (Math.PI*2*k)/N + rnd(-0.05,0.05);
+      const rr  = radius + rnd(-D*0.12, D*0.12);
+      const x = Math.cos(ang)*rr, y = Math.sin(ang)*rr;
+      idxs.push(nodes.length);
+      nodes.push({x, y, edges:[], ang, rr});
+      worldR = Math.max(worldR, rr);
+    }
+    rings.push(idxs);
+  }
+  const map = new Map();
+  // 링(폴리곤) 간선 — 원을 직선 코드로 근사
+  for(let j=1; j<=RINGS; j++){
+    const r = rings[j], n = r.length;
+    for(let k=0; k<n; k++){
+      // 아주 가끔 한 조각을 빼서 변화/막힘 유발
+      if(n>6 && Math.random()<0.06) continue;
+      addEdge(map, r[k], r[(k+1)%n]);
+    }
+  }
+  // 방사(안쪽 링 연결) — 삼각망이 되도록 양방향 최근접 연결
+  for(let j=1; j<=RINGS; j++){
+    const outer = rings[j], inner = rings[j-1];
+    const angOf = i => Math.atan2(nodes[i].y, nodes[i].x);
+    // 바깥 노드 → 가장 가까운 안쪽 노드
+    for(const p of outer){
+      let best=-1, bd=1e9; const ap=angOf(p);
+      for(const q of inner){ const d=angDist(ap, angOf(q)); if(d<bd){bd=d; best=q;} }
+      addEdge(map, p, best);
+    }
+    // 안쪽 노드 → 가장 가까운 바깥 노드 (외톨이 방지 + 삼각형화)
+    for(const q of inner){
+      let best=-1, bd=1e9; const aq=angOf(q);
+      for(const p of outer){ const d=angDist(aq, angOf(p)); if(d<bd){bd=d; best=p;} }
+      addEdge(map, q, best);
+    }
+  }
+}
+
+/* ---------- game state ---------- */
+let state = "menu";     // menu | play | over
+let elapsed = 0;        // 게임 진행 시간(초)
+let score = 0, combo = 0, best = 0, perfects = 0;
+let walked = new Set(); // 걸은 edge idx
+const spider = { from:0, to:0, edge:-1, t:0, x:0, y:0, startBeat:0, beats:1 };
+let fork = null;              // 접근 중인 노드의 갈림길: {branches:[{edge,walked,turn}], sel}
+let steeredThisEdge = false;  // 이번 간선에서 방향을 바꿨는가(타이밍 보너스)
+let lastTurnAt = -9;          // 타이밍 보너스용
+let flash = "";               // "PERFECT" 등 표시
+let flashT = 0;
+let pulse = 0;                // 도착 시 시각 펄스
+let beatPos = 0;              // 누적 비트(연속)
+let seq16 = 0;                // 시퀀서가 처리한 마지막 16분음표 스텝(1비트=4스텝)
+let enemies = [];             // 배회하는 적 거미들(집 안 짓고 왔다갔다)
+let overReason = "";          // 게임오버 사유: trapped | retrace | caught
+// 점수/연출
+const PTS_STEP = 10;          // 한 칸 기본 점수
+const PTS_RISK = 20;          // 위험 등급당 보너스 계수
+const TIER_COL = ["#7cdcff","#7ff0c8","#ffe37a","#ffb14a","#ff6a6a"]; // 위험 티어 색
+let riskStreak = 0, maxStreak = 0;   // 연속 위험 통과
+let floats = [], sparks = [], rings = [];  // 연출: 떠오르는 점수 / 파티클 / 확산 링
+let shake = 0, shakeX = 0, shakeY = 0;     // 화면 흔들림
+
+// ── 리듬: 이동을 비트 그리드에 락. 간선 하나 = 정수 비트만큼 이동 →
+//    도착이 항상 비트에 떨어지고(=갈림길이 비트에 도달) 메트로놈과 완벽 동기.
+//    시간이 지날수록 템포가 빨라져 난이도 상승.
+function beatsFor(e){ return Math.max(1, Math.round(e.len / D)); }   // 간선 길이→비트 수(대개 1)
+function beatPeriod(){ return Math.max(0.26, 0.50 - elapsed*0.0032); } // 초/비트 (템포 가속)
+
+// 카메라
+const cam = { x:0, y:0, s:1 };
+let camFrom = null, camTo = null, overT = 0;
+
+function startGame(){
+  ac(); // 사용자 제스처에서 오디오 활성화
+  buildWeb(); resize();
+  walked = new Set();
+  score = 0; combo = 0; perfects = 0; elapsed = 0;
+  steeredThisEdge = false; flash = ""; flashT = 0; pulse = 0;
+  riskStreak = 0; maxStreak = 0; floats = []; sparks = []; rings = []; shake = 0;
+  // 중심에서 무작위 스포크로 출발 → 첫 갈림길은 링1에서
+  const first = nodes[0].edges[(Math.random()*nodes[0].edges.length)|0];
+  const e = edges[first];
+  spider.from = 0; spider.to = (e.a===0? e.b : e.a); spider.edge = first; spider.t = 0;
+  spider.startBeat = 0; spider.beats = beatsFor(e);
+  spider.x = 0; spider.y = 0;
+  beatPos = 0; seq16 = 0;
+  buildFork();  // 첫 도착 노드의 갈림길 슬롯
+  overReason = "";
+  enemies = [];  // 바깥쪽(중심 출발점에서 먼 곳)에 적 거미 배치
+  for(let i=0;i<ENEMY_START;i++) enemies.push(makeEnemy(nodeInBand(worldR*0.45, worldR*0.9)));
+  cam.x = 0; cam.y = 0; cam.s = playScale;
+  camFrom = camTo = null; overT = 0;
+  state = "play";
+  ui.className = "";
+  panel.innerHTML = "";
+}
+
+function gameOver(reason){
+  state = "over";
+  overReason = reason || "trapped";
+  best = Math.max(best, score);
+  playDeath();
+  // 줌아웃 트윈 준비
+  camFrom = { x:cam.x, y:cam.y, s:cam.s };
+  camTo   = { x:0, y:0, s:fitScale };
+  overT = 0;
+}
+
+/* ---------- fork logic ---------- */
+// 진입 방향(hx,hy) 기준, 노드 B의 출구 edgeIdx가 도는 각(+우/-좌, 화면기준 y-down)
+function turnAngle(B, hx, hy, edgeIdx){
+  const e = edges[edgeIdx];
+  const other = (e.a===B) ? e.b : e.a;
+  const dx = nodes[other].x-nodes[B].x, dy = nodes[other].y-nodes[B].y;
+  const dot = hx*dx + hy*dy;
+  const cross = hx*dy - hy*dx;   // y-down: cross>0 → 화면상 시계방향 = 우회전
+  return Math.atan2(cross, dot);
+}
+function unwalkedExits(B){
+  const out = [];
+  for(const eIdx of nodes[B].edges) if(!walked.has(eIdx)) out.push(eIdx);
+  return out;
+}
+// 접근 중인 노드(spider.to)의 갈림길 슬롯을 구성.
+// 진입 간선만 제외하고 '모든' 갈래를 각도순(왼쪽- → 오른쪽+)으로 나열 —
+// 이미 걸은 줄도 슬롯으로 남겨 좌/우로 한 칸씩 규칙적으로 건너가게 한다.
+function buildFork(){
+  const A = nodes[spider.from], B = nodes[spider.to];
+  const hx = B.x-A.x, hy = B.y-A.y;   // 진입 방향
+  const list = [];
+  for(const eIdx of nodes[spider.to].edges){
+    if(eIdx === spider.edge) continue;                 // 역주행(진입 간선) 제외
+    list.push({ edge:eIdx, walked:walked.has(eIdx), turn:turnAngle(spider.to, hx, hy, eIdx) });
+  }
+  list.sort((a,b)=> a.turn - b.turn);                  // 화면 왼쪽 → 오른쪽
+  fork = { branches:list, sel:straightSlot(list) };
+}
+function straightSlot(list){                           // 직진(진입 방향 유지)에 가장 가까운 슬롯
+  let sel=0, bd=1e9;
+  for(let i=0;i<list.length;i++){ const d=Math.abs(list[i].turn); if(d<bd){bd=d; sel=i;} }
+  return sel;
+}
+
+/* ---------- roaming enemy spiders (집 안 짓고 배회) ---------- */
+const ENEMY_START = 2;          // 시작 적 수
+const ENEMY_CAP   = 4;          // 최대 적 수
+const ENEMY_SLOW  = 1.4;        // 플레이어 대비 이동 배수(>1 = 느림, 피할 여지)
+const CATCH_R     = D * 0.36;   // 접촉(잡힘) 판정 반경(월드 단위)
+function nodeInBand(minR, maxR){                // 반지름 밴드 안의 노드 하나 무작위
+  const cand = [];
+  for(let i=1;i<nodes.length;i++){
+    const r = Math.hypot(nodes[i].x, nodes[i].y);
+    if(r>=minR && r<=maxR && nodes[i].edges.length>=2) cand.push(i);
+  }
+  return cand.length ? cand[(Math.random()*cand.length)|0] : 1;
+}
+function makeEnemy(node){
+  const e0 = nodes[node].edges[(Math.random()*nodes[node].edges.length)|0];
+  const e = edges[e0];
+  return { from:node, to:(e.a===node? e.b : e.a), edge:e0,
+           startBeat: beatPos - Math.random(),   // 시작 위상 분산
+           beats: Math.max(1, Math.round(beatsFor(e)*ENEMY_SLOW)),
+           x:nodes[node].x, y:nodes[node].y };
+}
+function enemyStep(en){                          // 노드 도착 → 랜덤으로 계속(되돌아가기 지양=배회)
+  const B = en.to;
+  let opts = nodes[B].edges.filter(i=> i!==en.edge);
+  if(!opts.length) opts = nodes[B].edges;        // 막다르면 유턴 허용
+  const nx = opts[(Math.random()*opts.length)|0], e = edges[nx];
+  en.from = B; en.to = (e.a===B? e.b : e.a); en.edge = nx;
+  en.startBeat += en.beats;
+  en.beats = Math.max(1, Math.round(beatsFor(e)*ENEMY_SLOW));
+}
+
+function arrive(){
+  const eIdx = spider.edge;
+  walked.add(eIdx);                        // 방금 걸은 간선(궤적) — 마지막 칸도 그림엔 포함
+  const B = spider.to;
+
+  // ── 먼저 이 도착이 게임오버인지 판정. 그렇다면 점수·연출 없이 종료
+  //    (죽는 순간엔 +점수/보너스가 뜨지 않도록 판정을 점수 부여보다 앞에 둔다)
+  if(!fork || fork.branches.length === 0){ gameOver("trapped"); return; } // 갇힘(막다른 끝)
+  const chosen = fork.branches[fork.sel];
+  if(chosen.walked){ gameOver("retrace"); return; }                       // 이미 걸은 줄 = 중복=실패
+
+  // ── 여기부터는 계속 이어지는 '정상 도착' → 점수/콤보/연출
+  combo++;
+  if((combo===22 || combo===44) && enemies.length < ENEMY_CAP)
+    enemies.push(makeEnemy(nodeInBand(worldR*0.6, worldR)));
+  playPluck(combo);
+  pulse = 1;
+
+  // 점수: 기본 + '이미 선이 붙은 교차로'를 통과하는 위험 보너스
+  //   교차로에 붙은 걸은 선이 많을수록(risk↑) + 연속으로 위험할수록(streak↑) 급증.
+  let gained = PTS_STEP;
+  let filled = 0; for(const e of nodes[B].edges) if(walked.has(e)) filled++;
+  const risk = filled - 1;                 // 진입 간선 제외, 이미 붙어있던 걸은 선 수
+  if(risk >= 1){
+    riskStreak++; maxStreak = Math.max(maxStreak, riskStreak);
+    const mult = Math.min(riskStreak, 9);
+    const bonus = risk * PTS_RISK * mult;
+    gained += bonus;
+    const tier = Math.min(risk, 4), col = TIER_COL[tier];   // 촘촘할수록 뜨거운 색
+    spawnFloat(nodes[B].x, nodes[B].y, "+"+bonus, col, 18+tier*7);
+    spawnBurst(nodes[B].x, nodes[B].y, 8+tier*8, col);
+    spawnRing(nodes[B].x, nodes[B].y, col);
+    if(mult>=3) spawnFloat(nodes[B].x, nodes[B].y - D*0.5, "RISK ×"+mult, "#ffffff", 15+Math.min(mult,8));
+    shake = Math.max(shake, 2 + tier*2.5);
+    playRiskSfx(tier);
+  } else {
+    riskStreak = 0;
+  }
+  score += gained;
+
+  // 타이밍 보너스: 이번 간선에서 방향을 바꿔 비트에 맞춰 눌렀는가 (창은 템포에 비례)
+  if(steeredThisEdge && (elapsed - lastTurnAt) < beatPeriod()*0.5){
+    perfects++; score += 30; flash = "PERFECT"; flashT = 0.6; playPerfect();
+  }
+  steeredThisEdge = false;
+
+  const eN = edges[chosen.edge];
+  spider.from = B;
+  spider.to = (eN.a===B) ? eN.b : eN.a;
+  spider.edge = chosen.edge;
+  spider.startBeat += spider.beats;   // 다음 간선은 정확히 이 비트 경계에서 시작(그리드 유지)
+  spider.beats = beatsFor(eN);
+  spider.t = 0;
+  buildFork();                         // 다음 노드의 갈림길 슬롯 구성(기본=직진)
+}
+
+/* ---------- input ---------- */
+function stepSel(delta){                 // 슬롯 선택을 한 칸씩 이동(양 끝에서 순환)
+  if(state !== "play" || !fork || !fork.branches.length) return;
+  const n = fork.branches.length;
+  fork.sel = ((fork.sel + delta) % n + n) % n;
+  steeredThisEdge = true; lastTurnAt = elapsed; playTurn();
+}
+function resetSel(){                      // 직진 슬롯으로 복귀
+  if(state !== "play" || !fork || !fork.branches.length) return;
+  fork.sel = straightSlot(fork.branches);
+}
+addEventListener("keydown", e=>{
+  const c = e.code;
+  if(["ArrowLeft","ArrowRight","ArrowUp","ArrowDown","Space"].includes(c)) e.preventDefault();
+  if(state !== "play"){
+    if(c==="Enter" || c==="Space") startGame();
+    return;
+  }
+  if(c==="ArrowLeft"  || c==="KeyA") stepSel(-1);       // 한 칸 왼쪽
+  else if(c==="ArrowRight" || c==="KeyD") stepSel(+1);  // 한 칸 오른쪽
+  else if(c==="ArrowUp" || c==="KeyW" || c==="Space") resetSel();
+});
+addEventListener("pointerdown", e=>{
+  if(state !== "play"){ startGame(); return; }
+  const w = window.innerWidth || 960, x = e.clientX;
+  if(x < w*0.4) stepSel(-1);
+  else if(x > w*0.6) stepSel(+1);
+  else resetSel();
+}, {passive:true});
+
+/* ---------- render helpers ---------- */
+function sx(wx){ return (wx - cam.x)*cam.s + W/2 + shakeX; }
+function sy(wy){ return (wy - cam.y)*cam.s + H/2 + shakeY; }
+
+/* ---------- juicy effects ---------- */
+function spawnFloat(wx, wy, text, col, size){ floats.push({x:wx, y:wy, text, col, size, life:1}); }
+function spawnBurst(wx, wy, n, col){
+  for(let i=0;i<n;i++){ const a=Math.random()*6.2832, sp=rnd(50,200);
+    sparks.push({x:wx, y:wy, vx:Math.cos(a)*sp, vy:Math.sin(a)*sp, life:1, col}); }
+}
+function spawnRing(wx, wy, col){ rings.push({x:wx, y:wy, r:6, life:1, col}); }
+function updateFx(dt){
+  for(const f of floats){ f.life -= dt*1.1; }
+  for(const s of sparks){ s.life -= dt*1.6; s.x += s.vx*dt; s.y += s.vy*dt; s.vx*=0.92; s.vy*=0.92; }
+  for(const r of rings){ r.life -= dt*1.8; r.r += dt*280; }
+  if(floats.length) floats = floats.filter(f=>f.life>0);
+  if(sparks.length) sparks = sparks.filter(s=>s.life>0);
+  if(rings.length)  rings  = rings.filter(r=>r.life>0);
+  if(shake>0){ shakeX=(Math.random()*2-1)*shake; shakeY=(Math.random()*2-1)*shake; shake=Math.max(0,shake-dt*36); }
+  else { shakeX=0; shakeY=0; }
+}
+function drawFx(){                               // 링 + 파티클 (거미 아래 레이어)
+  for(const r of rings){
+    ctx.beginPath(); ctx.arc(sx(r.x), sy(r.y), r.r*cam.s, 0, 7);
+    ctx.globalAlpha = r.life*0.6; ctx.strokeStyle = r.col; ctx.lineWidth = 2; ctx.stroke();
+  }
+  for(const s of sparks){
+    ctx.globalAlpha = Math.min(1, s.life*1.3);
+    ctx.beginPath(); ctx.arc(sx(s.x), sy(s.y), 2.2, 0, 7); ctx.fillStyle = s.col; ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+function drawFloats(){                            // 떠오르는 +점수 (최상단)
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  for(const f of floats){
+    ctx.globalAlpha = Math.min(1, f.life*1.4);
+    ctx.font = "bold " + f.size + "px Segoe UI, sans-serif";
+    ctx.fillStyle = f.col;
+    ctx.fillText(f.text, sx(f.x), sy(f.y) - (1-f.life)*46);   // 위로 떠오름
+  }
+  ctx.globalAlpha = 1; ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
+}
+
+const PAL_PLAYER = { leg:"#ffcf6b", glow:"rgba(255,190,90,.18)", belly:"#3a2a12", head:"#ffd88a" };
+const PAL_ENEMY  = { leg:"#ff7a7a", glow:"rgba(255,70,70,.22)",  belly:"#3a1212", head:"#ff8a8a" };
+function drawSpider(px, py, hx, hy, pal){
+  pal = pal || PAL_PLAYER;
+  const a = Math.atan2(hy, hx);
+  const r = 5.5 + pulse*2.2;          // 몸통 반지름(픽셀 고정)
+  ctx.save();
+  ctx.translate(px, py); ctx.rotate(a);
+  // 다리 8개(두 마디), 배치 스트로크
+  ctx.strokeStyle = pal.leg; ctx.lineWidth = 1.4; ctx.lineCap = "round";
+  ctx.beginPath();
+  for(let i=0;i<8;i++){
+    const side = i<4 ? -1 : 1;
+    const t = (i%4)/3;                 // 0..1 앞→뒤
+    const base = (-0.6 + t*1.2);       // 몸통 기준 각도(라디안 대충)
+    const kx = Math.cos(base)* (4+ (0.5-Math.abs(t-0.5))*3);
+    const ky = side*(3 + (0.5-Math.abs(t-0.5))*4);
+    const fx = kx + Math.cos(base)*4;
+    const fy = ky + side*4;
+    ctx.moveTo(0,0); ctx.lineTo(kx,ky); ctx.lineTo(fx,fy);
+  }
+  ctx.stroke();
+  // 몸통(글로우: 넓은 저알파 → 밝은 코어)
+  ctx.beginPath(); ctx.arc(-r*0.6,0,r*1.9,0,7); ctx.fillStyle=pal.glow;  ctx.fill();
+  ctx.beginPath(); ctx.arc(-r*0.5,0,r*0.95,0,7); ctx.fillStyle=pal.belly; ctx.fill(); // 배
+  ctx.beginPath(); ctx.arc(r*0.4,0,r*0.55,0,7);  ctx.fillStyle=pal.head;  ctx.fill(); // 머리
+  ctx.restore();
+}
+
+function render(){
+  // 배경(불투명 fill = clear 겸용). 은은한 비네트 그라디언트 1회.
+  const g = ctx.createRadialGradient(W/2,H/2,0, W/2,H/2, MIN*0.75);
+  g.addColorStop(0, "#0c1220"); g.addColorStop(1, "#05070d");
+  ctx.fillStyle = g; ctx.fillRect(0,0,W,H);
+
+  // 1) 전체 웹(희미한 실크) — 한 path 배치 스트로크
+  ctx.strokeStyle = "rgba(120,150,200,.16)";
+  ctx.lineWidth = 1; ctx.lineCap = "round"; ctx.beginPath();
+  for(let i=0;i<edges.length;i++){
+    if(walked.has(i)) continue;
+    const e = edges[i], A = nodes[e.a], B = nodes[e.b];
+    ctx.moveTo(sx(A.x), sy(A.y)); ctx.lineTo(sx(B.x), sy(B.y));
+  }
+  ctx.stroke();
+
+  // 2) 걸은 궤적 — 글로우 이중 스트로크(넓고 흐림 → 밝고 얇음), 각각 한 path
+  ctx.beginPath();
+  for(const i of walked){
+    const e = edges[i], A = nodes[e.a], B = nodes[e.b];
+    ctx.moveTo(sx(A.x), sy(A.y)); ctx.lineTo(sx(B.x), sy(B.y));
+  }
+  ctx.strokeStyle = "rgba(90,200,255,.22)"; ctx.lineWidth = 6; ctx.stroke();
+  ctx.strokeStyle = "#bfe9ff"; ctx.lineWidth = 2; ctx.stroke();
+
+  // 3) 현재 이동 중인 간선(진입~거미까지)
+  const ce = edges[spider.edge];
+  if(ce){
+    const A = nodes[spider.from];
+    ctx.beginPath();
+    ctx.moveTo(sx(A.x), sy(A.y)); ctx.lineTo(sx(spider.x), sy(spider.y));
+    ctx.strokeStyle = "#eaffff"; ctx.lineWidth = 2.4; ctx.stroke();
+  }
+
+  // 4) 갈림길 프리뷰 — 도착 노드의 '모든' 슬롯 표시
+  //    선택=노랑(강조), 아직 안 걸은 줄=청록, 이미 걸은 줄=빨강(밟으면 게임오버).
+  if(state==="play" && ce && fork){
+    const B = spider.to, to = nodes[B];
+    const bx = sx(to.x), by = sy(to.y);
+    for(let i=0;i<fork.branches.length;i++){
+      const br = fork.branches[i], e = edges[br.edge];
+      const other = (e.a===B)? e.b : e.a;
+      const ox = sx(nodes[other].x), oy = sy(nodes[other].y);
+      const dx = ox-bx, dy = oy-by, L = Math.hypot(dx,dy)||1;
+      const isSel = (i===fork.sel);
+      ctx.strokeStyle = isSel ? "#ffe37a" : br.walked ? "rgba(255,90,90,.55)" : "rgba(120,220,255,.5)";
+      ctx.lineWidth = isSel ? 3.5 : 2;
+      ctx.beginPath();
+      ctx.moveTo(bx, by); ctx.lineTo(bx + dx/L*28, by + dy/L*28);
+      ctx.stroke();
+      ctx.beginPath(); ctx.arc(bx + dx/L*28, by + dy/L*28, isSel?4.5:2.6, 0,7);
+      ctx.fillStyle = isSel ? "#ffe37a" : br.walked ? "#ff5a5a" : "#7cdcff"; ctx.fill();
+    }
+    ctx.beginPath(); ctx.arc(bx,by,4,0,7); ctx.fillStyle="#ffe37a"; ctx.fill();
+  }
+
+  // 4.6) 연출: 확산 링 + 파티클 (거미 아래)
+  drawFx();
+
+  // 4.5) 적 거미 — 위험 반경 표시, 화면 밖이면 가장자리에 빨간 화살표로 예고
+  if(state!=="menu"){
+    for(const en of enemies){
+      const ex = sx(en.x), ey = sy(en.y);
+      if(ex>-40 && ex<W+40 && ey>-40 && ey<H+40){
+        ctx.beginPath(); ctx.arc(ex,ey, CATCH_R*cam.s, 0,7);
+        ctx.fillStyle="rgba(255,60,60,.10)"; ctx.fill();
+        ctx.strokeStyle="rgba(255,90,90,.35)"; ctx.lineWidth=1; ctx.stroke();
+        const A = nodes[en.from], B = nodes[en.to];
+        drawSpider(ex, ey, (B.x-A.x), (B.y-A.y), PAL_ENEMY);
+      } else {
+        const cx=W/2, cy=H/2; let dx=ex-cx, dy=ey-cy; const L=Math.hypot(dx,dy)||1; dx/=L; dy/=L;
+        const mx=W/2-22, my=H/2-22;
+        const t = Math.min(Math.abs(dx)>1e-3? mx/Math.abs(dx):1e9, Math.abs(dy)>1e-3? my/Math.abs(dy):1e9);
+        ctx.save(); ctx.translate(cx+dx*t, cy+dy*t); ctx.rotate(Math.atan2(dy,dx));
+        ctx.beginPath(); ctx.moveTo(9,0); ctx.lineTo(-7,-6); ctx.lineTo(-7,6); ctx.closePath();
+        ctx.fillStyle="rgba(255,80,80,.85)"; ctx.fill(); ctx.restore();
+      }
+    }
+  }
+
+  // 5) 거미
+  if(state!=="menu"){
+    const A = nodes[spider.from], Bn = nodes[spider.to];
+    drawSpider(sx(spider.x), sy(spider.y), (Bn.x-A.x), (Bn.y-A.y));
+  }
+
+  // 6) HUD
+  if(state==="play"){
+    ctx.textAlign="left"; ctx.textBaseline="top";
+    ctx.font = "bold 30px Segoe UI, sans-serif";
+    ctx.fillStyle="#eaf5ff"; ctx.fillText(score.toLocaleString(), 16, 12);
+    ctx.font = "13px Segoe UI, sans-serif"; ctx.fillStyle="#7fb0e0";
+    ctx.fillText("점수 · "+walked.size+"칸", 18, 48);
+    // 위험 스트릭(배수) 강조
+    if(riskStreak>=2){
+      const col = TIER_COL[Math.min(4, riskStreak>=6?4:riskStreak>=4?3:2)];
+      ctx.textAlign="right"; ctx.textBaseline="top";
+      ctx.font="bold "+(18+Math.min(riskStreak,9))+"px Segoe UI, sans-serif";
+      ctx.globalAlpha = 0.7 + pulse*0.3;
+      ctx.fillStyle=col; ctx.fillText("RISK ×"+Math.min(riskStreak,9), W-16, 14);
+      ctx.globalAlpha = 1;
+    } else if(combo>3){
+      ctx.textAlign="right"; ctx.font="bold 16px Segoe UI, sans-serif";
+      ctx.fillStyle="#7ff0c8"; ctx.fillText("COMBO "+combo, W-16, 16);
+    }
+    if(flashT>0){
+      ctx.globalAlpha = Math.min(1, flashT*2);
+      ctx.textAlign="center"; ctx.font="bold 20px Segoe UI, sans-serif";
+      ctx.fillStyle="#ffe37a";
+      ctx.fillText(flash, sx(spider.x), sy(spider.y)-26);
+      ctx.globalAlpha = 1;
+    }
+    // 상태 리셋(텍스트 상태 누수 방지)
+    ctx.textAlign="left"; ctx.textBaseline="alphabetic";
+  }
+
+  // 7) 떠오르는 +점수 (최상단)
+  drawFloats();
+}
+
+/* ---------- loop ---------- */
+let last = 0;
+function frame(now){
+  requestAnimationFrame(frame);                 // 정확히 1회, 최상단
+  let dt = (now - last)/1000; last = now;
+  dt = Math.max(0, Math.min(0.05, dt));         // dt 양끝 클램프(NaN/역주행 방지)
+
+  if(pulse > 0) pulse = Math.max(0, pulse - dt*4);
+  if(flashT > 0) flashT -= dt;
+  updateFx(dt);   // 연출(파티클/링/떠오르는 점수/흔들림) — 모든 상태에서 진행
+
+  if(state === "play"){
+    elapsed += dt;
+    beatPos += dt / beatPeriod();                 // 비트 진행(연속)
+    // 메트로놈: 정수 비트를 넘을 때마다 틱 + 비트 펄스
+    const step16 = Math.floor(beatPos * 4);   // 16분음표 스텝
+    while(seq16 < step16){
+      seq16++;
+      bgmStep(seq16);
+      if(seq16 % 4 === 0) pulse = Math.max(pulse, seq16%16===0 ? 0.7 : 0.4); // 정박마다 시각 펄스
+    }
+    // 적 거미 이동(비트 그리드) + 접촉 판정 — 도착/점수 처리보다 '먼저' 검사해서
+    //   잡히는 프레임에는 도착 점수가 붙지 않게 한다.
+    for(const en of enemies){
+      while(beatPos >= en.startBeat + en.beats) enemyStep(en);
+      const A = nodes[en.from], B = nodes[en.to];
+      const et = Math.max(0, Math.min(1, (beatPos - en.startBeat)/en.beats));
+      en.x = A.x + (B.x-A.x)*et; en.y = A.y + (B.y-A.y)*et;
+      if(elapsed > 1.2 && Math.hypot(en.x-spider.x, en.y-spider.y) < CATCH_R){ gameOver("caught"); break; } // 시작 그레이스
+    }
+    // 도착 판정(점수): beatPos가 현재 간선의 끝 비트를 넘었는가 — 잡히지 않았을 때만
+    if(state === "play" && beatPos >= spider.startBeat + spider.beats){ arrive(); }
+    if(state === "play"){
+      spider.t = Math.max(0, Math.min(1, (beatPos - spider.startBeat) / spider.beats));
+      const A = nodes[spider.from], B = nodes[spider.to];
+      spider.x = A.x + (B.x-A.x)*spider.t;
+      spider.y = A.y + (B.y-A.y)*spider.t;
+      // 카메라: 거미 부드럽게 추적
+      const k = Math.min(1, dt*7);
+      cam.x += (spider.x - cam.x)*k;
+      cam.y += (spider.y - cam.y)*k;
+      cam.s += (playScale - cam.s)*k;
+    }
+  } else if(state === "over"){
+    overT = Math.min(1, overT + dt/1.3);
+    const u = 1 - Math.pow(1-overT, 3);          // easeOutCubic
+    if(camFrom && camTo){
+      cam.x = camFrom.x + (camTo.x-camFrom.x)*u;
+      cam.y = camFrom.y + (camTo.y-camFrom.y)*u;
+      cam.s = camFrom.s + (camTo.s-camFrom.s)*u;
+    }
+    if(overT >= 1 && !ui.classList.contains("on")) showOver();
+  }
+
+  render();
+}
+
+/* ---------- overlays ---------- */
+function showMenu(){
+  state = "menu"; ui.className = "on";
+  panel.innerHTML =
+    '<h1>거미줄 마스터</h1>' +
+    '<div class="sub">한붓그리기 &times; 리듬 · 꼬마 거미의 거미줄 산책</div>' +
+    '<div class="hint">거미는 비트에 맞춰 스스로 직진합니다.<br>' +
+    '갈림길에서 <span class="k">&larr;</span><span class="k">&rarr;</span>(또는 <span class="k">A</span><span class="k">D</span>)로 <b>한 칸씩</b> 방향을 옮기세요.<br>' +
+    '<span style="color:#7cdcff">파란 줄</span>은 갈 수 있고, <span style="color:#ff7a7a">빨간 줄</span>은 이미 지난 길 — 밟으면 끝!<br>' +
+    '<span style="color:#ff7a7a">빨간 적 거미</span>가 거미줄 위를 배회해요. 닿으면 잡힙니다!<br>' +
+    '중복 없이, 잡히지 않고 오래 걸을수록 고득점.<br><br>' +
+    '<span class="blink">아무 키 · 화면 터치로 시작</span></div>' +
+    (best>0 ? '<div class="best">최고 기록 '+best+'</div>' : '');
+}
+function showOver(){
+  ui.className = "on";
+  const isBest = score>=best && score>0;
+  const title = overReason==="caught" ? "잡혔다!"
+              : overReason==="retrace" ? "막혔다!"
+              : "갇혔다!";
+  panel.innerHTML =
+    '<div class="big">'+title+'</div>' +
+    '<div class="score"><b>'+score.toLocaleString()+'</b> 점</div>' +
+    '<div class="best">'+walked.size+'칸 걸음' +
+      (maxStreak>=2 ? ' · 최대 RISK ×'+Math.min(maxStreak,9) : '') +
+      (perfects>0 ? ' · PERFECT ×'+perfects : '') + '</div>' +
+    (isBest ? '<div class="best" style="color:#ffd27a">★ 신기록 ★</div>'
+            : '<div class="best">최고 '+best.toLocaleString()+'점</div>') +
+    '<div class="hint" style="margin-top:1em"><span class="blink">아무 키 · 터치로 다시 하기</span></div>';
+}
+
+/* 전역 노출(헤드리스 검증용) */
+window.startGame = startGame; window.frame = frame; window.arrive = arrive;
+window.__step = stepSel;                               // 슬롯 한 칸 이동(+1/-1)
+window.__spider = spider;                              // {from,to,edge,...} 참조
+window.__fork = ()=> fork && { n:fork.branches.length, sel:fork.sel,
+  selWalked: fork.branches[fork.sel] ? fork.branches[fork.sel].walked : null,
+  free: fork.branches.filter(b=>!b.walked).length,
+  slots: fork.branches.map(b=>b.walked) };
+window.__exitsAtTo = ()=> unwalkedExits(spider.to).length;
+window.__enemies = ()=> enemies.map(e=>({x:e.x,y:e.y}));
+window.__seq = ()=> seq16;
+window.__fx = ()=> ({floats:floats.length, sparks:sparks.length, rings:rings.length, riskStreak, maxStreak});
+window.__state = ()=>({state,score,combo,edges:edges.length,walked:walked.size,
+  enemies:enemies.length, reason:overReason});
+
+resize(); showMenu();
+requestAnimationFrame(frame);                   // 킥오프 (파일 전체 rAF 호출은 2회)
+</script>
+</body>
+</html>
