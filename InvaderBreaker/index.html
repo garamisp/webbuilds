@@ -82,7 +82,7 @@ let parts = 0;
 let flyingParts = [];
 
 // 개체들
-let balls = [], enemies = [], shots = [], powerups = [], aiPaddles = [], stars = [];
+let balls = [], enemies = [], shots = [], powerups = [], aiPaddles = [], stars = [], stormCells = [];
 let boss = null;
 let form = { dir:1, speed:26, stepDown:0 };
 
@@ -205,8 +205,6 @@ function resetGame(){
   parts = 0; paddle.w = BASE_W; paddle.x = VW/2;
   balls.length = 0; enemies = []; shots = []; powerups = []; flyingParts = []; aiPaddles = []; boss = null;
   takenUpgrades = {}; invuln = 0; op.active = false;
-  stars = [];
-  for(let i=0;i<70;i++) stars.push({ x:Math.random()*VW, y:Math.random()*VH, s:rnd(0.4,1.6), tw:rnd(0,6.28) });
 }
 function startStage(n){
   stage = n;
@@ -585,9 +583,37 @@ function menuOverlay(){
 }
 
 // ================= 렌더 =================
+// 배경 별/우주폭풍 시드 (로드시 1회)
+function initBg(){
+  stars = [];
+  for(let i=0;i<70;i++) stars.push({ x:Math.random()*VW, y:Math.random()*VH, s:rnd(0.4,1.6), tw:rnd(0,6.28) });
+  stormCells = [];
+  const cols = ["#5a4ad0","#3a6ad0","#2aa0b0","#8a4ad0","#b0468f"];
+  for(let i=0;i<5;i++) stormCells.push({
+    bx:rnd(60,VW-60), by:rnd(40,VH*0.8), r:rnd(210,360),
+    ax:rnd(50,130), ay:rnd(30,90), sx:rnd(0.04,0.12), sy:rnd(0.03,0.10),
+    ph:rnd(0,6.28), col:cols[i%cols.length]
+  });
+}
+// 아주 옅은 우주폭풍(성운) — additive 블렌드 + 낮은 알파로 은은하게 흐름
+function drawStorm(){
+  ctx.globalCompositeOperation = "lighter";
+  for(const c of stormCells){
+    const x = c.bx + Math.sin(time*c.sx + c.ph)*c.ax;
+    const y = c.by + Math.cos(time*c.sy + c.ph*1.3)*c.ay;
+    const r = c.r * (0.85 + 0.15*Math.sin(time*0.18 + c.ph));
+    const a = 0.05 + 0.03*Math.sin(time*0.25 + c.ph*1.7);
+    const g = ctx.createRadialGradient(x,y,0, x,y,r);
+    g.addColorStop(0, c.col); g.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.globalAlpha = a<0 ? 0 : a; ctx.fillStyle = g;
+    ctx.fillRect(x-r, y-r, r*2, r*2);
+  }
+  ctx.globalAlpha = 1; ctx.globalCompositeOperation = "source-over";
+}
 function render(){
   ctx.setTransform(1,0,0,1,0,0);
   ctx.fillStyle = "#05070f"; ctx.fillRect(0,0,VW,VH);
+  drawStorm();
   ctx.fillStyle = "#16305a";
   for(const st of stars){ ctx.globalAlpha = 0.4+0.6*Math.abs(Math.sin(time*1.5+st.tw)); ctx.fillRect(st.x,st.y,st.s,st.s); }
   ctx.globalAlpha = 1;
@@ -745,6 +771,7 @@ function loop(t){
   update(dt); render();
   if(state === "play" && ui.classList.contains("on")) hideOverlay();
 }
+initBg();
 menuOverlay();
 requestAnimationFrame(loop);                                // (2)
 
