@@ -1,0 +1,761 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>INVADER BREAKER</title>
+<style>
+  html,body{margin:0;height:100%;background:#03040a;overflow:hidden;
+    font-family:"Courier New",monospace;color:#8fe9ff;-webkit-user-select:none;user-select:none;
+    touch-action:none}
+  #wrap{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#03040a}
+  #c{display:block;image-rendering:pixelated;box-shadow:0 0 40px #0af3,0 0 4px #0ff2;background:#05070f}
+  #ui{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;
+    text-align:center;pointer-events:none;opacity:0;visibility:hidden;transition:opacity .15s}
+  #ui.on{pointer-events:auto;background:rgba(2,4,12,.78);opacity:1;visibility:visible}
+  #panel{max-width:720px;padding:24px}
+  h1{font-size:min(12vw,74px);margin:0;letter-spacing:.05em;color:#7dffea;
+    text-shadow:0 0 10px #17b8a0,0 0 30px #0a6}
+  .sub{color:#ff7de1;opacity:.9;margin:.3em 0 1.3em;font-size:min(4.5vw,20px);letter-spacing:.15em}
+  .hint{opacity:.85;font-size:min(3.6vw,15px);line-height:1.9}
+  .hint b{color:#ffe27d}
+  .big{font-size:min(11vw,60px);color:#ff6b6b;text-shadow:0 0 14px #b02020;margin:.1em}
+  .blink{animation:b 1s steps(2) infinite}@keyframes b{50%{opacity:.2}}
+  .score{color:#ffe27d;font-size:min(6vw,26px);margin:.6em 0}
+  .up-title{color:#ffe27d;font-size:24px;letter-spacing:.1em;margin:0 0 18px;text-shadow:0 0 12px #a80}
+  .cards{display:flex;gap:16px;justify-content:center;flex-wrap:wrap}
+  .card{width:180px;min-height:150px;padding:16px 12px;background:#0a1420;border:2px solid #1d6b8a;
+    border-radius:12px;cursor:pointer;transition:transform .1s,border-color .1s,box-shadow .1s;
+    display:flex;flex-direction:column;align-items:center;justify-content:center}
+  .card:hover{transform:translateY(-6px);border-color:#5ff0ff;box-shadow:0 0 22px #0ce6}
+  .card .ic{font-size:38px;line-height:1;margin-bottom:8px}
+  .card .nm{color:#7dffea;font-size:17px;font-weight:bold;margin-bottom:6px}
+  .card .ds{color:#cfe9ff;opacity:.85;font-size:13px;line-height:1.5}
+  .card .key{margin-top:10px;color:#ffe27d;font-size:13px;opacity:.8}
+  .up-hint{margin-top:18px;opacity:.7;font-size:14px}
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="c"></canvas></div>
+<div id="ui" class="on"><div id="panel"></div></div>
+<script>
+"use strict";
+/* ================= INVADER BREAKER =================
+   Space Invaders x Arkanoid.
+   - 공 재고(stock): 10초마다 +1, 최대치까지. 발사 시 소모. 아끼거나 쏟아붓거나 운용은 자유.
+   - 웨이브 클리어 시 필드의 공은 재고로 합류 + 업그레이드 3택.
+   - 5스테이지마다 거대 보스(내려와 바닥 닿으면 게임오버).
+   - 벙커: 공을 튕겨주고 적 투사체 맞으면 침식.
+   - 패들 장갑 파츠: 피격 흡수(파츠부터 떨어지고, 다 떨어진 뒤 HP 감소).
+==================================================== */
+
+const VW = 900, VH = 640;
+const cv = document.getElementById("c"), ctx = cv.getContext("2d", {alpha:false});
+const ui = document.getElementById("ui"), panel = document.getElementById("panel");
+cv.width = VW; cv.height = VH;
+
+// ---- 화면 스케일 (레터박스) ----
+function resize(){
+  const iw = window.innerWidth || VW, ih = window.innerHeight || VH;
+  const s = Math.min(iw / VW, ih / VH);
+  cv.style.width = Math.round(VW*s) + "px"; cv.style.height = Math.round(VH*s) + "px";
+}
+addEventListener("resize", resize); addEventListener("scroll", resize, {passive:true}); resize();
+function toVX(clientX){ const r = cv.getBoundingClientRect(); return (clientX - r.left) / (r.width || 1) * VW; }
+
+// ================= 상태 =================
+let state = "menu";                        // menu | play | upgrade | over
+let time = 0, score = 0, stage = 1, best = 0;
+let playerHp = 3; const maxHp = 5;
+let shakeT = 0, shakeMag = 0, invuln = 0;
+let banner = null, bannerT = 0;
+
+// 공/재고 운용
+let stock = 3, maxStock = 5;
+let refillInterval = 10, refillTimer = 0;
+let ballDamage = 1, ballRadius = 7, ballSpeedBonus = 0;
+
+// 패들 & 장갑 파츠
+const BASE_W = 100, PART_W = 22, MAX_PARTS = 4;
+const paddle = { w:BASE_W, h:14, x:VW/2, y:VH-56, spd:660 };
+let parts = 0;
+let flyingParts = [];
+
+// 개체들
+let balls = [], enemies = [], shots = [], powerups = [], aiPaddles = [], stars = [];
+let boss = null;
+let form = { dir:1, speed:26, stepDown:0 };
+
+// 업그레이드
+let upgradeChoices = [], takenUpgrades = {};
+
+// 오퍼레이터(마스코트)
+let op = { text:"", n:0, t:0, hold:0, active:false, blink:0 };
+
+// BGM
+let bgm = null, bossBgm = null, muted = false;
+
+// ================= 입력 =================
+const keys = {};
+function onFire(){
+  if(state === "menu" || state === "over"){ startGame(); return; }
+  if(state === "play"){ fireBall(); }
+}
+addEventListener("keydown", e=>{
+  keys[e.code] = true;
+  if(["Space","ArrowLeft","ArrowRight","ArrowUp","ArrowDown","KeyA","KeyD"].includes(e.code)) e.preventDefault();
+  if(e.code === "KeyM"){ toggleMute(); return; }
+  if(state === "upgrade"){ const m=/^Digit([1-3])$/.exec(e.code); if(m) pickUpgrade(+m[1]-1); return; }
+  if(e.code === "Enter" || e.code === "Space") onFire();
+});
+addEventListener("keyup", e=>{ keys[e.code] = false; });
+addEventListener("pointermove", e=>{ paddle.x = clamp(toVX(e.clientX), paddle.w/2, VW-paddle.w/2); }, {passive:true});
+addEventListener("pointerdown", e=>{ if(e.clientX!=null) paddle.x = clamp(toVX(e.clientX), paddle.w/2, VW-paddle.w/2); onFire(); });
+
+// ================= 오디오 =================
+let AC = null;
+function sfx(freq, dur, type, vol, slideTo){
+  try{
+    AC = AC || new (window.AudioContext || window.webkitAudioContext)();
+    if(AC.state === "suspended") AC.resume();
+    const o = AC.createOscillator(), g = AC.createGain(), t = AC.currentTime;
+    o.type = type || "square"; o.frequency.setValueAtTime(freq, t);
+    if(slideTo) o.frequency.exponentialRampToValueAtTime(Math.max(20,slideTo), t + dur);
+    g.gain.setValueAtTime((vol||0.15), t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g); g.connect(AC.destination); o.start(t); o.stop(t + dur + 0.02);
+  }catch(e){}
+}
+const SFX = {
+  bounce:()=>sfx(660,0.05,"square",0.10),
+  wall:()=>sfx(320,0.04,"square",0.06),
+  hit:()=>sfx(240,0.06,"sawtooth",0.10,180),
+  kill:()=>sfx(180,0.14,"square",0.13,80),
+  shoot:()=>sfx(150,0.10,"sawtooth",0.05,70),
+  block:()=>sfx(880,0.05,"triangle",0.08),
+  bunker:()=>sfx(120,0.08,"square",0.08,60),
+  power:()=>sfx(520,0.14,"triangle",0.13,1040),
+  stockUp:()=>sfx(700,0.10,"square",0.10,1100),
+  ouch:()=>sfx(200,0.22,"sawtooth",0.18,60),
+  part:()=>sfx(300,0.12,"square",0.12,120),
+  clear:()=>{sfx(523,0.12,"square",0.13); setTimeout(()=>sfx(784,0.18,"square",0.13),120);},
+  over:()=>sfx(200,0.4,"sawtooth",0.2,50),
+  warn:()=>sfx(90,0.5,"sawtooth",0.15,120),
+  // 오퍼레이터 비트음 speech (글자마다 삑삑, 피치 흔들림 → "왈오라롸")
+  blip:(seed)=>{ const f = 300 + ((seed*61)%9)*48; sfx(f,0.035,"square",0.045, f*0.86); },
+};
+
+// ================= BGM =================
+function makeAudio(src){ try{ const a=new Audio(src); a.loop=true; a.volume=0.38; a.addEventListener("error",()=>{}); return a; }catch(e){ return null; } }
+function updateBgm(){
+  if(muted) return;
+  const wantBoss = (state==="play" && stage%5===0 && boss && boss.alive);
+  if(wantBoss){ if(bossBgm){ if(bgm) bgm.pause(); bossBgm.play().catch(()=>{}); } else if(bgm){ bgm.play().catch(()=>{}); } }
+  else { if(bossBgm) bossBgm.pause(); if(bgm) bgm.play().catch(()=>{}); }
+}
+function startBgm(){
+  if(!bgm) bgm = makeAudio("bgm.mp3");
+  if(!bossBgm) bossBgm = makeAudio("boss.mp3");
+  updateBgm();
+}
+function toggleMute(){
+  muted = !muted;
+  if(muted){ if(bgm) bgm.pause(); if(bossBgm) bossBgm.pause(); }
+  else updateBgm();
+  opSay(muted ? "음소거" : "사운드 ON");
+}
+
+// ================= 유틸 =================
+function clamp(v,a,b){ return v<a?a:(v>b?b:v); }
+function rnd(a,b){ return a + Math.random()*(b-a); }
+
+// ================= 오퍼레이터 대사 =================
+function opSay(text){ op.text = text; op.n = 0; op.t = 0; op.hold = 2.0; op.active = true; }
+function updateOp(dt){
+  op.blink -= dt; if(op.blink <= 0) op.blink = rnd(2,5);
+  if(!op.active) return;
+  op.t += dt;
+  const target = Math.min(op.text.length, Math.floor(op.t/0.05));
+  if(target > op.n){
+    for(let i=op.n;i<target;i++){ const ch=op.text[i]; if(ch!==" " && ch!=="!" && i%2===0) SFX.blip(i+op.text.length); }
+    op.n = target;
+  }
+  if(op.n >= op.text.length){ op.hold -= dt; if(op.hold <= 0) op.active = false; }
+}
+
+// ================= 도트 패턴 =================
+const INV = {
+  grunt: ["..X..X..","..XXXX..",".XXXXXX.","XX.XX.XX","XXXXXXXX",".X.XX.X.","X......X",".X....X."],
+  tank:  ["XX....XX","X.XXXX.X","XXXXXXXX","XXX..XXX","XXXXXXXX","XXXXXXXX","X.X..X.X","XX.XX.XX"],
+  shoot: ["...XX...","..XXXX..",".XXXXXX.","XXXXXXXX","X.XXXX.X","..X..X..",".X.XX.X.","X..XX..X"],
+  boss:  ["X..X..X..X.","XX.XXXXX.XX",".XXXXXXXXX.","XXX.XXX.XXX","XXXXXXXXXXX","XX.XXXXX.XX","X.X.....X.X","..X.....X.."],
+};
+const ETYPE = {
+  grunt: { pat:"grunt", col:"#5dff8a", hp:1, pts:100, shoots:false, w:42, h:30 },
+  tank:  { pat:"tank",  col:"#6aa8ff", hp:3, pts:250, shoots:false, w:46, h:34 },
+  shoot: { pat:"shoot", col:"#ff6bd6", hp:2, pts:180, shoots:true,  w:44, h:32 },
+};
+
+// ================= 게임 시작/리셋 =================
+function startGame(){ resetGame(); startStage(1); startBgm(); }
+function resetGame(){
+  score = 0; stage = 1; playerHp = 3;
+  stock = 3; maxStock = 5; refillInterval = 10; refillTimer = 0;
+  ballDamage = 1; ballRadius = 7; ballSpeedBonus = 0;
+  parts = 0; paddle.w = BASE_W; paddle.x = VW/2;
+  balls.length = 0; enemies = []; shots = []; powerups = []; flyingParts = []; aiPaddles = []; boss = null;
+  takenUpgrades = {}; invuln = 0; op.active = false;
+  stars = [];
+  for(let i=0;i<70;i++) stars.push({ x:Math.random()*VW, y:Math.random()*VH, s:rnd(0.4,1.6), tw:rnd(0,6.28) });
+}
+function startStage(n){
+  stage = n;
+  shots = []; powerups = []; boss = null; enemies = []; flyingParts = [];
+  balls.length = 0; invuln = 0.8;
+  buildBunkers(); banner = null; bannerT = 0;
+  if(n % 5 === 0){ spawnBoss(n); showBanner("!!  BOSS  STAGE "+n+"  !!","#ff6b6b"); SFX.warn(); opSay("경고! 초대형 개체 강하!!"); }
+  else { buildFormation(n); showBanner("STAGE "+n,"#7dffea"); opSay("웨이브 "+n+" 개시! 방어 준비!"); }
+  state = "play";
+  updateBgm();
+}
+function showBanner(t,c){ banner = {t,c}; bannerT = 1.8; }
+
+function buildFormation(n){
+  const cols = Math.min(9, 6 + Math.floor(n/2));
+  const rows = Math.min(5, 3 + Math.floor((n-1)/3));
+  const cellW = 52, rowH = 44, topY = 70;
+  const startX = (VW - cols*cellW)/2 + cellW/2;
+  for(let r=0;r<rows;r++) for(let c=0;c<cols;c++){
+    let key;
+    if(r === 0) key = (n>=2 && c%2===0) ? "shoot" : "tank";
+    else if(r === 1) key = (n>=2 && Math.random()<0.5) ? "shoot" : "grunt";
+    else key = "grunt";
+    // 1스테이지는 완전 정적(도입부). 이후 확률적 슈터 배치
+    if(n>=2 && Math.random() < 0.1 + n*0.01) key = "shoot";
+    const t = ETYPE[key];
+    const hp = t.hp + (key==="tank" ? Math.floor(n/4) : 0);
+    enemies.push({ type:key, x:startX + c*cellW - t.w/2, y:topY + r*rowH, w:t.w, h:t.h,
+      hp, maxHp:hp, col:t.col, pts:t.pts, shoots:t.shoots, fire:rnd(1.5,5), alive:true, bob:Math.random()*6.28 });
+  }
+  form.dir = 1;
+  form.speed = n<=1 ? 0 : (10 + n*4);
+  form.stepDown = n<=2 ? 0 : (6 + n*1.5);
+}
+function spawnBoss(n){
+  const idx = n/5, w = 320, h = 210, hp = 45 + (idx-1)*35;
+  boss = { x:(VW-w)/2, y:-h*0.4, w, h, hp, maxHp:hp, vx:28+idx*6, vy:9+idx*2, fire:1.6, flash:0, alive:true, idx };
+}
+function buildBunkers(){
+  const list = [], count = 4, cols = 11, rows = 6, cell = 9;
+  const bw = cols*cell, bh = rows*cell, gap = (VW - count*bw)/(count+1), by = VH - 200;
+  for(let i=0;i<count;i++){
+    const bx = gap + i*(bw+gap), c = new Uint8Array(cols*rows).fill(1);
+    for(let r=0;r<rows;r++) for(let x=0;x<cols;x++){
+      if(r >= rows-2 && x >= 4 && x <= 6) c[r*cols+x] = 0;
+      if(r===0 && (x===0 || x===cols-1)) c[r*cols+x] = 0;
+    }
+    list.push({ x:bx, y:by, cols, rows, cell, c, bw, bh });
+  }
+  // 재작성 대신 재할당(참조 유지 필요 없음)
+  bunkers.length = 0; for(const b of list) bunkers.push(b);
+}
+let bunkers = [];
+
+// ================= 공 =================
+function ballSpd(){ return clamp(340 + ballSpeedBonus + (stage-1)*6, 200, 620); }
+function fireBall(){
+  if(stock <= 0){ opSay("공 재고 없음! 재장전 대기…"); SFX.wall(); return; }
+  stock--;
+  const spd = ballSpd(), ang = -Math.PI/2 + rnd(-0.28, 0.28);
+  balls.push({ x:paddle.x, y:paddle.y-14, vx:Math.cos(ang)*spd, vy:Math.sin(ang)*spd, r:ballRadius, spd, trail:[] });
+  SFX.bounce();
+}
+
+// ---- 원-사각 반사 ----
+function circleRectHit(b, rx, ry, rw, rh){
+  const nx = clamp(b.x, rx, rx+rw), ny = clamp(b.y, ry, ry+rh);
+  const dx = b.x-nx, dy = b.y-ny, d2 = dx*dx+dy*dy;
+  if(d2 > b.r*b.r) return false;
+  if(d2 > 1e-6){
+    const d = Math.sqrt(d2), nX = dx/d, nY = dy/d, vn = b.vx*nX + b.vy*nY;
+    if(vn < 0){ b.vx -= 2*vn*nX; b.vy -= 2*vn*nY; }
+    b.x = nx + nX*(b.r+0.1); b.y = ny + nY*(b.r+0.1);
+  } else {
+    const left=b.x-rx, right=rx+rw-b.x, top=b.y-ry, bot=ry+rh-b.y, m=Math.min(left,right,top,bot);
+    if(m===left){ b.x=rx-b.r; if(b.vx>0)b.vx=-b.vx; }
+    else if(m===right){ b.x=rx+rw+b.r; if(b.vx<0)b.vx=-b.vx; }
+    else if(m===top){ b.y=ry-b.r; if(b.vy>0)b.vy=-b.vy; }
+    else { b.y=ry+rh+b.r; if(b.vy<0)b.vy=-b.vy; }
+  }
+  return true;
+}
+function normSpeed(b){
+  const m = Math.hypot(b.vx,b.vy) || 1;
+  b.vx = b.vx/m*b.spd; b.vy = b.vy/m*b.spd;
+  if(Math.abs(b.vy) < 0.22*b.spd){
+    const sgn = b.vy>=0 ? 1 : -1; b.vy = sgn*0.22*b.spd;
+    b.vx = (b.vx>=0?1:-1)*Math.sqrt(Math.max(0, b.spd*b.spd - b.vy*b.vy));
+  }
+}
+
+// ================= 업데이트 =================
+function update(dt){
+  time += dt;
+  if(shakeT>0) shakeT -= dt;
+  if(bannerT>0) bannerT -= dt;
+  if(invuln>0) invuln -= dt;
+  updateOp(dt);
+  updateFlyingParts(dt);
+  if(state !== "play") return;
+
+  updatePaddle(dt);
+  updateAi(dt);
+  updateBalls(dt);
+  updateEnemies(dt);
+  updateBoss(dt);
+  updateShots(dt);
+  updatePowerups(dt);
+
+  refillTimer += dt;
+  if(refillTimer >= refillInterval){
+    refillTimer -= refillInterval;
+    if(stock < maxStock){ stock++; SFX.stockUp(); opSay("공 재고 보충! ("+stock+"/"+maxStock+")"); }
+  }
+  checkState();
+}
+
+function updatePaddle(dt){
+  let mv = 0;
+  if(keys.ArrowLeft || keys.KeyA) mv -= 1;
+  if(keys.ArrowRight || keys.KeyD) mv += 1;
+  if(mv) paddle.x += mv*paddle.spd*dt;
+  paddle.x = clamp(paddle.x, paddle.w/2, VW - paddle.w/2);
+}
+
+function updateAi(dt){
+  for(const a of aiPaddles){
+    if(a.flash>0) a.flash -= dt;
+    let target=null, best=-1;
+    for(const b of balls){ if(b.vy>0 && b.y>best && b.y < a.y+140 && b.y < a.y){ best=b.y; target=b; } }
+    if(target){ const dx = target.x - a.x; a.x += clamp(dx, -a.spd*dt, a.spd*dt); }
+    else a.x += Math.sin(time*1.3 + a.y)*a.spd*dt*0.35;   // 대기 중 어슬렁 (지멋대로)
+    a.x = clamp(a.x, a.w/2, VW - a.w/2);
+  }
+}
+
+function updateBalls(dt){
+  const pL=paddle.x-paddle.w/2, pR=paddle.x+paddle.w/2, pT=paddle.y;
+  for(let bi=balls.length-1; bi>=0; bi--){
+    const b = balls[bi];
+    b.trail.push({x:b.x,y:b.y}); if(b.trail.length>8) b.trail.shift();
+    const steps = Math.max(1, Math.ceil(b.spd*dt/(b.r*0.9))), sdt = dt/steps;
+    for(let s=0;s<steps;s++){
+      b.x += b.vx*sdt; b.y += b.vy*sdt;
+      if(b.x < b.r){ b.x=b.r; b.vx=Math.abs(b.vx); SFX.wall(); }
+      else if(b.x > VW-b.r){ b.x=VW-b.r; b.vx=-Math.abs(b.vx); SFX.wall(); }
+      if(b.y < b.r){ b.y=b.r; b.vy=Math.abs(b.vy); SFX.wall(); }
+      // 패들
+      if(b.vy>0 && b.y+b.r>=pT && b.y-b.r<=pT+paddle.h && b.x>=pL-b.r && b.x<=pR+b.r){
+        b.y = pT - b.r;
+        const off = clamp((b.x-paddle.x)/(paddle.w/2), -1, 1), ang = off*1.05 - Math.PI/2;
+        b.vx = Math.cos(ang)*b.spd; b.vy = Math.sin(ang)*b.spd; SFX.bounce();
+      }
+      // AI 방위군
+      for(const a of aiPaddles) if(circleRectHit(b, a.x-a.w/2, a.y, a.w, a.h)){ a.flash=0.12; SFX.bounce(); }
+      // 벙커
+      for(const bk of bunkers){
+        if(b.x<bk.x-b.r||b.x>bk.x+bk.bw+b.r||b.y<bk.y-b.r||b.y>bk.y+bk.bh+b.r) continue;
+        for(let r=0;r<bk.rows;r++) for(let x=0;x<bk.cols;x++){
+          if(bk.c[r*bk.cols+x] && circleRectHit(b, bk.x+x*bk.cell, bk.y+r*bk.cell, bk.cell, bk.cell)) SFX.wall();
+        }
+      }
+      // 적 / 보스
+      for(const e of enemies){ if(e.alive && circleRectHit(b, e.x, e.y, e.w, e.h)){ damageEnemy(e); break; } }
+      if(boss && boss.alive && circleRectHit(b, boss.x, boss.y, boss.w, boss.h)) damageBoss();
+    }
+    normSpeed(b);
+    if(b.y - b.r > VH) balls.splice(bi,1);   // 떨어진 공은 소실 (죽지 않음)
+  }
+}
+
+function damageEnemy(e){
+  e.hp -= ballDamage;
+  if(e.hp <= 0){ e.alive = false; score += e.pts; SFX.kill(); maybeDrop(e.x+e.w/2, e.y+e.h/2); }
+  else SFX.hit();
+}
+function damageBoss(){
+  boss.hp -= ballDamage; boss.flash = 0.08;
+  if(boss.hp <= 0){ boss.alive = false; score += 3000*boss.idx; SFX.kill(); shake(0.5,10); }
+  else SFX.hit();
+}
+function maybeDrop(x,y){
+  if(Math.random() < 0.15){
+    const types = ["M","P","H","S"], t = types[(Math.random()*types.length)|0];
+    powerups.push({ x, y, vy:120, type:t });
+  }
+}
+
+function updateEnemies(dt){
+  if(!enemies.length) return;
+  let minX=1e9,maxX=-1e9,any=false;
+  for(const e of enemies){ if(!e.alive) continue; any=true; if(e.x<minX)minX=e.x; if(e.x+e.w>maxX)maxX=e.x+e.w; }
+  if(!any) return;
+  const aliveN=enemies.filter(e=>e.alive).length, totalN=enemies.length;
+  const spd = form.speed * (1 + (1-aliveN/totalN)*1.3);
+  let step = false; const nx = form.dir*spd*dt;
+  if(maxX+nx > VW-14 || minX+nx < 14){ form.dir *= -1; step = true; }
+  for(const e of enemies){ if(!e.alive) continue; e.x += form.dir*spd*dt; if(step) e.y += form.stepDown; }
+  for(const e of enemies){
+    if(!e.alive || !e.shoots) continue;
+    e.fire -= dt;
+    if(e.fire <= 0 && shots.length < 14){
+      shots.push({ x:e.x+e.w/2, y:e.y+e.h, vx:0, vy:240, w:4, h:12, boss:false });
+      e.fire = rnd(2.2,5.5) - Math.min(2, stage*0.1); SFX.shoot();
+    }
+  }
+}
+function updateBoss(dt){
+  if(!boss || !boss.alive) return;
+  if(boss.flash>0) boss.flash -= dt;
+  boss.x += boss.vx*dt;
+  if(boss.x < 10){ boss.x=10; boss.vx=Math.abs(boss.vx); }
+  else if(boss.x+boss.w > VW-10){ boss.x=VW-10-boss.w; boss.vx=-Math.abs(boss.vx); }
+  boss.y += boss.vy*dt;
+  boss.fire -= dt;
+  if(boss.fire <= 0 && shots.length < 26){
+    const cx=boss.x+boss.w/2, cy=boss.y+boss.h;
+    for(let i=-2;i<=2;i++) shots.push({ x:cx+i*22, y:cy, vx:i*40, vy:200, w:5, h:14, boss:true });
+    boss.fire = 1.8; SFX.shoot();
+  }
+}
+
+function updateShots(dt){
+  const pL=paddle.x-paddle.w/2, pR=paddle.x+paddle.w/2;
+  for(let i=shots.length-1;i>=0;i--){
+    const s = shots[i]; s.x += s.vx*dt; s.y += s.vy*dt;
+    let dead = false;
+    for(const b of balls){ if(Math.abs(b.x-s.x)<b.r+s.w && Math.abs(b.y-s.y)<b.r+s.h){ dead=true; SFX.block(); break; } }
+    if(!dead) for(const a of aiPaddles){ if(s.x>a.x-a.w/2 && s.x<a.x+a.w/2 && s.y+s.h/2>=a.y && s.y-s.h/2<=a.y+a.h){ dead=true; a.flash=0.12; SFX.block(); break; } }
+    if(!dead) for(const bk of bunkers){
+      if(s.x<bk.x||s.x>bk.x+bk.bw||s.y<bk.y||s.y>bk.y+bk.bh) continue;
+      const cx=((s.x-bk.x)/bk.cell)|0, cy=((s.y-bk.y)/bk.cell)|0;
+      if(cx<0||cx>=bk.cols||cy<0||cy>=bk.rows) continue;
+      if(bk.c[cy*bk.cols+cx]){ erode(bk,cx,cy); dead=true; SFX.bunker(); break; }
+    }
+    if(!dead && invuln<=0 && s.y+s.h/2>=paddle.y && s.y-s.h/2<=paddle.y+paddle.h && s.x>=pL && s.x<=pR){ dead=true; paddleHit(); }
+    if(dead || s.y-s.h > VH) shots.splice(i,1);
+  }
+}
+function erode(bk,cx,cy){
+  for(let dy=0;dy<=1;dy++) for(let dx=-1;dx<=1;dx++){
+    const x=cx+dx, y=cy+dy; if(x<0||x>=bk.cols||y<0||y>=bk.rows) continue;
+    if((Math.abs(dx)+dy===0) || Math.random()<0.6) bk.c[y*bk.cols+x]=0;
+  }
+}
+
+// ---- 피격: 장갑 파츠부터 떨어지고, 다 떨어진 뒤 HP 감소 ----
+function paddleHit(){
+  if(parts > 0){
+    const side = (parts % 2 === 1) ? -1 : 1;
+    const ex = paddle.x + side*(paddle.w/2 - PART_W/4);
+    flyingParts.push({ x:ex, y:paddle.y, vx:side*rnd(50,140), vy:-rnd(90,170), rot:0, rotv:rnd(-9,9), t:1.3, w:PART_W, h:paddle.h });
+    parts--; paddle.w = BASE_W + parts*PART_W;
+    paddle.x = clamp(paddle.x, paddle.w/2, VW-paddle.w/2);
+    invuln = 0.7; SFX.part(); shake(0.22,5); opSay("장갑 파츠 이탈! ("+parts+" 남음)");
+  } else {
+    playerHp--; invuln = 1.2; SFX.ouch(); shake(0.35,8);
+    if(playerHp <= 0) gameOver(); else opSay("피격! 정신 차려요!!");
+  }
+}
+function shake(t,m){ shakeT=Math.max(shakeT,t); shakeMag=m; }
+function updateFlyingParts(dt){
+  for(let i=flyingParts.length-1;i>=0;i--){
+    const p = flyingParts[i];
+    p.vy += 620*dt; p.x += p.vx*dt; p.y += p.vy*dt; p.rot += p.rotv*dt; p.t -= dt;
+    if(p.t <= 0 || p.y > VH+40) flyingParts.splice(i,1);
+  }
+}
+
+function updatePowerups(dt){
+  const pL=paddle.x-paddle.w/2, pR=paddle.x+paddle.w/2;
+  for(let i=powerups.length-1;i>=0;i--){
+    const p = powerups[i]; p.y += p.vy*dt;
+    if(p.y>=paddle.y-8 && p.y<=paddle.y+paddle.h+8 && p.x>=pL-6 && p.x<=pR+6){ applyPower(p.type); powerups.splice(i,1); continue; }
+    if(p.y > VH+20) powerups.splice(i,1);
+  }
+}
+function applyPower(t){
+  SFX.power();
+  if(t==="M"){
+    const src = balls.slice();
+    for(const b of src) for(const da of [-0.4,0.4]){
+      if(balls.length>=14) break;
+      const ang = Math.atan2(b.vy||-1, b.vx||0)+da;
+      balls.push({ x:b.x, y:b.y, vx:Math.cos(ang)*b.spd, vy:Math.sin(ang)*b.spd, r:b.r, spd:b.spd, trail:[] });
+    }
+    opSay("멀티볼! 화면을 채워요!");
+  } else if(t==="P"){ addPart(); }
+  else if(t==="H"){ playerHp=Math.min(maxHp,playerHp+1); opSay("긴급 수리! HP 회복!"); }
+  else if(t==="S"){ stock=Math.min(maxStock,stock+2); opSay("보급 낙하! 공 재고 +2!"); }
+}
+function addPart(){
+  if(parts < MAX_PARTS){ parts++; paddle.w = BASE_W + parts*PART_W; opSay("장갑 파츠 장착! 방어력 UP!"); }
+  else opSay("파츠 최대치! (대신 HP 회복)"), playerHp=Math.min(maxHp,playerHp+1);
+}
+function addAiPaddle(){
+  const idx = aiPaddles.length;
+  aiPaddles.push({ x:VW/2, y:paddle.y-60-idx*32, w:74, h:12, spd:360, flash:0 });
+  opSay("AI 방위군 전개! 지원 개시!");
+}
+
+// ================= 판정 =================
+function checkState(){
+  const dangerY = paddle.y - 2;
+  for(const e of enemies){ if(e.alive && e.y+e.h >= dangerY){ gameOver(); return; } }
+  if(boss && boss.alive && boss.y+boss.h >= dangerY){ gameOver(); return; }
+  if(stage % 5 === 0){ if(boss && !boss.alive) waveClear(); }
+  else if(enemies.length && enemies.every(e=>!e.alive)) waveClear();
+}
+function waveClear(){
+  SFX.clear();
+  score += 500 + stage*50;
+  stock = Math.min(maxStock, stock + balls.length);   // 필드의 공 → 재고로 합류
+  balls.length = 0;
+  if(stage % 5 === 0){ playerHp = Math.min(maxHp, playerHp+1); opSay("보스 격파! 정비 완료!"); }
+  else opSay("웨이브 "+stage+" 클리어! 보급 선택하세요");
+  rollUpgrades(); showUpgradeOverlay(); state = "upgrade";
+  updateBgm();
+}
+function gameOver(){
+  state = "over"; SFX.over(); shake(0.6,14); best = Math.max(best, score);
+  opSay("작전 실패… 재도전을!"); updateBgm();
+  showOverlay(`<div class="big">GAME OVER</div>
+    <div class="score">SCORE ${score}</div>
+    <div class="hint">도달 스테이지 <b>${stage}</b> &nbsp;·&nbsp; 최고 <b>${best}</b></div>
+    <div class="hint blink" style="margin-top:1em">ENTER / CLICK 로 다시 시작</div>`);
+}
+
+// ================= 업그레이드 =================
+const UPGRADES = [
+  { id:"refill",   ic:"⏩", nm:"재장전 가속", ds:"공 재고 회복 -2초", avail:()=>refillInterval>4, apply:()=>refillInterval=Math.max(4,refillInterval-2) },
+  { id:"maxstock", ic:"➕", nm:"탄창 확장",   ds:"최대 공 보유 +1",   avail:()=>maxStock<9,      apply:()=>{ maxStock++; stock++; } },
+  { id:"damage",   ic:"💥", nm:"화력 강화",   ds:"공 데미지 +1",                                 apply:()=>ballDamage++ },
+  { id:"size",     ic:"⭕", nm:"대구경 탄",   ds:"공 크기 +2",        avail:()=>ballRadius<15,   apply:()=>ballRadius+=2 },
+  { id:"faster",   ic:"⚡", nm:"가속 탄",     ds:"공 속도 +40",       avail:()=>ballSpeedBonus<160, apply:()=>ballSpeedBonus+=40 },
+  { id:"slower",   ic:"🎯", nm:"정밀 제어",   ds:"공 속도 -35 (컨트롤↑)", avail:()=>ballSpeedBonus>-90, apply:()=>ballSpeedBonus-=35 },
+  { id:"bunker",   ic:"🧱", nm:"벙커 보강",   ds:"모든 벙커 완전 복구",                          apply:()=>buildBunkers() },
+  { id:"ai",       ic:"🤖", nm:"AI 방위군",   ds:"자동 방어 막대 +1", avail:()=>aiPaddles.length<3, apply:()=>addAiPaddle() },
+  { id:"heal",     ic:"❤️", nm:"긴급 수리",   ds:"HP +1",             avail:()=>playerHp<maxHp,  apply:()=>playerHp=Math.min(maxHp,playerHp+1) },
+  { id:"part",     ic:"🛡️", nm:"장갑 파츠",   ds:"패들 파츠 +1 (피격 흡수)", avail:()=>parts<MAX_PARTS, apply:()=>addPart() },
+];
+function rollUpgrades(){
+  const avail = UPGRADES.filter(u=>!u.avail || u.avail());
+  upgradeChoices = [];
+  while(upgradeChoices.length < 3 && avail.length) upgradeChoices.push(avail.splice((Math.random()*avail.length)|0,1)[0]);
+}
+function showUpgradeOverlay(){
+  const cards = upgradeChoices.map((u,i)=>`<div class="card" onclick="pickUpgrade(${i})">
+    <div class="ic">${u.ic}</div><div class="nm">${u.nm}</div><div class="ds">${u.ds}</div><div class="key">[${i+1}]</div></div>`).join("");
+  showOverlay(`<div class="up-title">▲ 보급 · 업그레이드 선택 ▲</div>
+    <div class="cards">${cards}</div>
+    <div class="up-hint">카드 클릭 또는 &nbsp;1 / 2 / 3&nbsp; 키</div>`);
+}
+function pickUpgrade(i){
+  if(state !== "upgrade") return;
+  const u = upgradeChoices[i]; if(!u) return;
+  u.apply(); takenUpgrades[u.id] = (takenUpgrades[u.id]||0)+1;
+  SFX.power(); hideOverlay(); opSay("「"+u.nm+"」 적용 완료!");
+  startStage(stage+1);
+}
+
+// ================= 오버레이 =================
+function showOverlay(html){ panel.innerHTML = html; ui.classList.add("on"); }
+function hideOverlay(){ ui.classList.remove("on"); }
+function menuOverlay(){
+  showOverlay(`<h1>INVADER<br>BREAKER</h1>
+    <div class="sub">SPACE INVADERS × ARKANOID</div>
+    <div class="hint">
+      <b>마우스</b> / <b>← →</b> 패들 이동 &nbsp;·&nbsp; <b>SPACE·클릭</b> 공 발사<br>
+      공은 <b>10초마다 1개</b> 재고로 충전(최대치까지) — 아껴 쏠지 쏟아부을지는 당신 몫!<br>
+      벙커는 공을 튕겨주고 적 탄을 막아줘요 &nbsp;·&nbsp; <b>웨이브마다 업그레이드</b> 선택<br>
+      <b>5스테이지</b>마다 내려오는 <b style="color:#ff6b6b">거대 보스</b> &nbsp;·&nbsp; <b>M</b> 음소거<br>
+      <span style="opacity:.7">공이 떨어져도 죽지 않아요. 적 탄·접촉을 조심!</span>
+    </div>
+    <div class="hint blink" style="margin-top:1.1em">ENTER / CLICK 로 시작</div>`);
+}
+
+// ================= 렌더 =================
+function render(){
+  ctx.setTransform(1,0,0,1,0,0);
+  ctx.fillStyle = "#05070f"; ctx.fillRect(0,0,VW,VH);
+  ctx.fillStyle = "#16305a";
+  for(const st of stars){ ctx.globalAlpha = 0.4+0.6*Math.abs(Math.sin(time*1.5+st.tw)); ctx.fillRect(st.x,st.y,st.s,st.s); }
+  ctx.globalAlpha = 1;
+  if(shakeT>0) ctx.translate((Math.random()*2-1)*shakeMag, (Math.random()*2-1)*shakeMag);
+
+  if(state !== "menu"){
+    drawBunkers(); drawEnemies(); drawBoss(); drawShots(); drawPowerups();
+    drawBalls(); drawAi(); drawPaddle(); drawFlyingParts(); drawBanner();
+    ctx.setTransform(1,0,0,1,0,0);
+    drawHUD(); drawStock(); drawOperator();
+  }
+}
+
+function drawPaddle(){
+  const w=paddle.w, y=paddle.y, h=paddle.h;
+  const blink = invuln>0 && (Math.floor(time*16)%2===0);
+  if(parts>0){
+    const armW = (w-BASE_W)/2;
+    ctx.fillStyle = blink ? "#6b5a2a" : "#ffc24d";
+    ctx.fillRect(paddle.x-w/2, y, armW, h);
+    ctx.fillRect(paddle.x+w/2-armW, y, armW, h);
+    ctx.strokeStyle = "#8a5a10"; ctx.lineWidth = 1; ctx.beginPath();
+    for(let k=1;k<=parts;k++){ const off = BASE_W/2 + k*PART_W/2;
+      ctx.moveTo(paddle.x-off+0.5,y); ctx.lineTo(paddle.x-off+0.5,y+h);
+      ctx.moveTo(paddle.x+off-0.5,y); ctx.lineTo(paddle.x+off-0.5,y+h); }
+    ctx.stroke();
+  }
+  ctx.fillStyle = blink ? "#3a5a66" : "#5ff0ff"; ctx.fillRect(paddle.x-BASE_W/2, y, BASE_W, h);
+  ctx.fillStyle = blink ? "#2f4a55" : "#bffcff"; ctx.fillRect(paddle.x-BASE_W/2+3, y+2, BASE_W-6, 3);
+  ctx.fillStyle = blink ? "#2f4a55" : "#8ffcff"; ctx.fillRect(paddle.x-3, y-5, 6, 6);
+}
+function drawFlyingParts(){
+  for(const p of flyingParts){
+    ctx.save(); ctx.translate(p.x,p.y); ctx.rotate(p.rot);
+    ctx.globalAlpha = Math.min(1,p.t); ctx.fillStyle = "#ffc24d";
+    ctx.fillRect(-p.w/2,-p.h/2,p.w,p.h); ctx.globalAlpha = 1; ctx.restore();
+  }
+}
+function drawAi(){
+  for(const a of aiPaddles){
+    ctx.fillStyle = a.flash>0 ? "#ffffff" : "#b9ff5d";
+    ctx.fillRect(a.x-a.w/2, a.y, a.w, a.h);
+    ctx.fillStyle = "#05070f"; ctx.font = "bold 9px 'Courier New'"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText("A I", a.x, a.y+a.h/2+1);
+    ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
+  }
+}
+function drawBalls(){
+  for(const b of balls){
+    for(let i=0;i<b.trail.length;i++){ const tr=b.trail[i]; ctx.globalAlpha=(i+1)/b.trail.length*0.4; ctx.fillStyle="#ffef8f"; ctx.fillRect(tr.x-2,tr.y-2,4,4); }
+    ctx.globalAlpha=1; ctx.fillStyle="#fff6c0"; ctx.beginPath(); ctx.arc(b.x,b.y,b.r,0,6.2832); ctx.fill();
+    ctx.fillStyle="#fffef0"; ctx.beginPath(); ctx.arc(b.x-2,b.y-2,b.r*0.4,0,6.2832); ctx.fill();
+  }
+}
+function drawInvader(patKey,x,y,w,h,col){
+  const pat=INV[patKey], rows=pat.length, cols=pat[0].length, cell=Math.min(w/cols,h/rows);
+  const ox=x+(w-cell*cols)/2, oy=y+(h-cell*rows)/2; ctx.fillStyle=col;
+  for(let r=0;r<rows;r++){ const row=pat[r]; for(let c=0;c<cols;c++) if(row[c]==="X") ctx.fillRect(ox+c*cell,oy+r*cell,cell-0.5,cell-0.5); }
+}
+function drawEnemies(){
+  for(const e of enemies){ if(!e.alive) continue;
+    const wob=Math.sin(time*3+e.bob)*2; drawInvader(ETYPE[e.type].pat, e.x, e.y+wob, e.w, e.h, e.col);
+    if(e.maxHp>1){ const w=e.w*0.8, hx=e.x+e.w*0.1, hy=e.y+wob-5;
+      ctx.fillStyle="#3a1520"; ctx.fillRect(hx,hy,w,3); ctx.fillStyle="#ff5a7a"; ctx.fillRect(hx,hy,w*(e.hp/e.maxHp),3); }
+  }
+}
+function drawBoss(){
+  if(!boss || !boss.alive) return;
+  drawInvader("boss", boss.x, boss.y, boss.w, boss.h, boss.flash>0?"#ffffff":"#ff5b5b");
+  ctx.fillStyle="#ffe27d"; const ex=boss.x+boss.w*0.5, ey=boss.y+boss.h*0.42, er=10+4*Math.sin(time*4);
+  ctx.beginPath(); ctx.arc(ex,ey,er,0,6.2832); ctx.fill();
+  const bw=VW*0.7, bx=(VW-bw)/2, by=34;
+  ctx.fillStyle="#2a0d12"; ctx.fillRect(bx,by,bw,12);
+  ctx.fillStyle="#ff4d5e"; ctx.fillRect(bx,by,bw*Math.max(0,boss.hp/boss.maxHp),12);
+  ctx.strokeStyle="#ff9aa6"; ctx.lineWidth=1; ctx.strokeRect(bx+0.5,by+0.5,bw-1,11);
+}
+function drawBunkers(){
+  ctx.fillStyle="#39d98a";
+  for(const bk of bunkers) for(let r=0;r<bk.rows;r++) for(let x=0;x<bk.cols;x++)
+    if(bk.c[r*bk.cols+x]) ctx.fillRect(bk.x+x*bk.cell, bk.y+r*bk.cell, bk.cell-0.5, bk.cell-0.5);
+}
+function drawShots(){ for(const s of shots){ ctx.fillStyle=s.boss?"#ff9d3a":"#ff5a5a"; ctx.fillRect(s.x-s.w/2,s.y-s.h/2,s.w,s.h); } }
+function drawPowerups(){
+  const cols={ M:"#ffd23f", P:"#ffc24d", H:"#5dff8a", S:"#5ff0ff" };
+  ctx.textAlign="center"; ctx.textBaseline="middle"; ctx.font="bold 12px 'Courier New'";
+  for(const p of powerups){ ctx.fillStyle=cols[p.type]||"#fff"; ctx.fillRect(p.x-9,p.y-7,18,14); ctx.fillStyle="#05070f"; ctx.fillText(p.type,p.x,p.y+1); }
+  ctx.textAlign="left"; ctx.textBaseline="alphabetic";
+}
+function drawBanner(){
+  if(bannerT<=0 || !banner) return;
+  ctx.globalAlpha=Math.min(1,bannerT); ctx.textAlign="center"; ctx.textBaseline="middle";
+  ctx.font="bold 40px 'Courier New'"; ctx.fillStyle=banner.c; ctx.fillText(banner.t, VW/2, VH*0.38);
+  ctx.globalAlpha=1; ctx.textAlign="left"; ctx.textBaseline="alphabetic";
+}
+function drawHUD(){
+  ctx.font="16px 'Courier New'"; ctx.textBaseline="top";
+  ctx.fillStyle="#8fe9ff"; ctx.textAlign="left"; ctx.fillText("SCORE "+score, 68, 14);
+  ctx.textAlign="center"; ctx.fillStyle=(stage%5===0)?"#ff6b6b":"#7dffea"; ctx.fillText((stage%5===0?"BOSS ":"STAGE ")+stage, VW/2, 12);
+  ctx.textAlign="right";
+  for(let i=0;i<playerHp;i++){ ctx.fillStyle="#ff5a7a"; ctx.fillRect(VW-14-i*20, 14, 14, 12); }
+  // 음소거 표시
+  ctx.fillStyle=muted?"#ff6b6b":"#33505a"; ctx.font="12px 'Courier New'"; ctx.fillText(muted?"♪ OFF":"♪ ON", VW-12, 34);
+  ctx.textAlign="left"; ctx.textBaseline="alphabetic";
+}
+function drawStock(){
+  const n=maxStock, gap=16, tot=(n-1)*gap;
+  const cx=clamp(paddle.x, tot/2+8, VW-tot/2-8), cy=paddle.y+paddle.h+16;   // 막대 아래로
+  for(let i=0;i<n;i++){ const px=cx-tot/2+i*gap; ctx.beginPath(); ctx.arc(px,cy,5,0,6.2832);
+    if(i<stock){ ctx.fillStyle="#fff6c0"; ctx.fill(); } else { ctx.strokeStyle="#4a5a3a"; ctx.lineWidth=1; ctx.stroke(); } }
+  if(stock<maxStock){ const w=Math.max(tot,40), x=cx-w/2, y=cy+9;
+    ctx.fillStyle="#20303a"; ctx.fillRect(x,y,w,3); ctx.fillStyle="#5ff0ff"; ctx.fillRect(x,y,w*(refillTimer/refillInterval),3); }
+  if(stock>0 && balls.length===0){ ctx.globalAlpha=0.55+0.45*Math.abs(Math.sin(time*4));
+    ctx.fillStyle="#bffcff"; ctx.font="13px 'Courier New'"; ctx.textAlign="center"; ctx.fillText("SPACE / CLICK 발사", paddle.x, paddle.y-14); ctx.globalAlpha=1; ctx.textAlign="left"; }
+}
+
+// ---- 오퍼레이터(마스코트 + 말풍선) ----
+function wrap(t,n){ const l=[]; for(let i=0;i<t.length;i+=n) l.push(t.slice(i,i+n)); return l; }
+function drawOperator(){
+  const s=44, mx=14, my=12, cx=mx+s/2;
+  const talking = op.active && op.n < op.text.length;
+  // 말풍선 (마스코트 아래, 꼬리는 위로) — 실제 픽셀폭 측정으로 줄넘김 방지
+  if(op.active){
+    const shown = op.text.substr(0,op.n), lines = wrap(shown,18);
+    ctx.font = "13px 'Courier New'";
+    let mw = 44; for(const l of lines){ const w=ctx.measureText(l).width; if(w>mw) mw=w; }
+    const bw = Math.min(mw+20, 320), bh = lines.length*17+12;
+    const px = mx, py = my+s+10;
+    ctx.fillStyle="#0b1a24"; ctx.strokeStyle="#5ff0ff"; ctx.lineWidth=1.5;
+    roundRect(px,py,bw,bh,8); ctx.fill(); ctx.stroke();
+    // 꼬리 (위쪽, 마스코트 향함)
+    ctx.beginPath(); ctx.moveTo(px+14,py); ctx.lineTo(px+21,py-9); ctx.lineTo(px+30,py); ctx.closePath();
+    ctx.fillStyle="#0b1a24"; ctx.fill(); ctx.strokeStyle="#5ff0ff"; ctx.stroke();
+    ctx.fillStyle="#cfeeff"; ctx.textAlign="left"; ctx.textBaseline="top";
+    for(let i=0;i<lines.length;i++) ctx.fillText(lines[i], px+10, py+7+i*17);
+    ctx.textBaseline="alphabetic";
+  }
+  // 마스코트 본체 (작은 로봇 오퍼레이터)
+  const y = my + Math.sin(time*3)*2;
+  ctx.strokeStyle="#3fd0e0"; ctx.lineWidth=2; ctx.fillStyle="#0c2230";
+  roundRect(mx,y,s,s,8); ctx.fill(); ctx.stroke();
+  ctx.strokeStyle="#3fd0e0"; ctx.beginPath(); ctx.moveTo(cx,y); ctx.lineTo(cx,y-8); ctx.stroke();
+  ctx.fillStyle= talking? "#ffe27d":"#ff6bd6"; ctx.beginPath(); ctx.arc(cx,y-10,3,0,6.2832); ctx.fill();
+  const eyeH = op.blink<0.12 ? 1 : 6;
+  ctx.fillStyle="#7dffea"; ctx.fillRect(mx+10,y+14,8,eyeH); ctx.fillRect(mx+s-18,y+14,8,eyeH);
+  const mo = talking ? 3+3*Math.abs(Math.sin(time*22)) : 2;
+  ctx.fillStyle="#ffb0e6"; ctx.fillRect(mx+14,y+s-14,s-28,mo);
+}
+function roundRect(x,y,w,h,r){ ctx.beginPath(); ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r); ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath(); }
+
+// ================= 루프 (rAF 프레임당 1회) =================
+let last = 0;
+function loop(t){
+  requestAnimationFrame(loop);                              // (1)
+  const dt = Math.max(0, Math.min(0.05, (t-last)/1000)); last = t;
+  update(dt); render();
+  if(state === "play" && ui.classList.contains("on")) hideOverlay();
+}
+menuOverlay();
+requestAnimationFrame(loop);                                // (2)
+
+// 디버그/검증 훅
+window.__dbg = ()=>({state,stage,score,hp:playerHp,stock,maxStock,parts,ai:aiPaddles.length,enemies:enemies.filter(e=>e.alive).length,boss:boss?boss.hp:null,balls:balls.length,shots:shots.length});
+window.__start = ()=>{ resetGame(); startStage(1); };
+window.__g = ()=>({balls,enemies,shots,powerups,boss,paddle,form,bunkers,aiPaddles,flyingParts,upgradeChoices,
+  get stock(){return stock}, get maxStock(){return maxStock}, get parts(){return parts}, get hp(){return playerHp},
+  get refillInterval(){return refillInterval}, get ballDamage(){return ballDamage}, get ballRadius(){return ballRadius},
+  get op(){return op},
+  fireBall, startStage, pickUpgrade, addPart, applyPower, opSay });
+</script>
+</body>
+</html>
