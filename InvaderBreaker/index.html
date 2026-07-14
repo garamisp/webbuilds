@@ -331,12 +331,20 @@ function updatePaddle(dt){
 }
 
 function updateAi(dt){
+  const n = aiPaddles.length; if(!n) return;
+  // 각자 담당 구역(홈)을 화면에 고르게 분배
+  for(let i=0;i<n;i++){ const a=aiPaddles[i]; if(a.flash>0) a.flash-=dt; a.home=VW*(i+1)/(n+1); a._tx=null; a._td=1e9; }
+  // 떨어지는 공을 "가장 가까운 AI 하나"에만 배정 → 여럿이 한 공에 몰려 뭉치지 않음
+  for(const b of balls){
+    if(b.vy <= 0) continue;                         // 올라가는 공 무시
+    let owner=null, bd=1e9;
+    for(let i=0;i<n;i++){ const a=aiPaddles[i]; if(b.y > a.y+10) continue;   // 이미 지나친 AI 제외
+      const d=Math.abs(b.x-a.home); if(d<bd){ bd=d; owner=a; } }
+    if(owner){ const d=Math.abs(b.x-owner.x); if(d<owner._td){ owner._td=d; owner._tx=b.x; } }
+  }
   for(const a of aiPaddles){
-    if(a.flash>0) a.flash -= dt;
-    let target=null, best=-1;
-    for(const b of balls){ if(b.vy>0 && b.y>best && b.y < a.y+140 && b.y < a.y){ best=b.y; target=b; } }
-    if(target){ const dx = target.x - a.x; a.x += clamp(dx, -a.spd*dt, a.spd*dt); }
-    else a.x += Math.sin(time*1.3 + a.y)*a.spd*dt*0.35;   // 대기 중 어슬렁 (지멋대로)
+    const tx = (a._tx!=null) ? a._tx : a.home + Math.sin(time*0.8 + a.y)*70;  // 배정 없으면 홈 주변 배회
+    a.x += clamp(tx - a.x, -a.spd*dt, a.spd*dt);
     a.x = clamp(a.x, a.w/2, VW - a.w/2);
   }
 }
